@@ -9,6 +9,11 @@ import { config } from '../config.js';
 import type { Mind, Perception } from '../mind/mind.js';
 import type { ChatHistory } from '../mind/history.js';
 
+/** Normaliza el texto a "chat real": sin saltos de línea (todo en una línea). */
+function cleanText(text: string): string {
+  return text.replace(/\s*\n+\s*/g, ' ').trim();
+}
+
 /**
  * El CUERPO en Discord. Traduce eventos de Discord -> percepciones para la
  * Mente, y respuestas de la Mente -> mensajes de Discord. No tiene lógica de
@@ -93,7 +98,7 @@ export class DiscordBody {
     try {
       const reply = await this.mind.respondTo(perception);
       await this.typeLikeAHuman(msg, reply, direct);
-      await msg.reply(reply);
+      await this.deliver(msg, reply);
       this.logSamara(perception.channelId, reply);
     } catch (err) {
       console.error('Error generando respuesta:', err);
@@ -132,10 +137,28 @@ export class DiscordBody {
       if (!text) return; // decidió quedarse callada
       if ('sendTyping' in msg.channel) await msg.channel.sendTyping();
       await new Promise((r) => setTimeout(r, Math.min(text.length * 30, 3500)));
-      if ('send' in msg.channel) await msg.channel.send(text);
-      this.logSamara(msg.channelId, text);
+      const clean = cleanText(text);
+      if ('send' in msg.channel) await msg.channel.send(clean);
+      this.logSamara(msg.channelId, clean);
     } catch (err) {
       console.error('Error en mensaje proactivo:', err);
+    }
+  }
+
+  /**
+   * Envía la respuesta. Por defecto escribe normal (todos saben a quién le
+   * habla); solo usa el "responder" citando cuando ya entraron otros mensajes
+   * después, para que no quede ambiguo a qué contesta.
+   */
+  private async deliver(msg: Message, text: string): Promise<void> {
+    const clean = cleanText(text);
+    const movedOn = msg.channel.lastMessageId !== msg.id; // entró algo después
+    if (movedOn) {
+      await msg.reply(clean); // cita para desambiguar
+    } else if ('send' in msg.channel) {
+      await msg.channel.send(clean); // mensaje normal
+    } else {
+      await msg.reply(clean);
     }
   }
 

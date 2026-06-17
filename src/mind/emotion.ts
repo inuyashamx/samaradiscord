@@ -8,21 +8,35 @@ export interface Mood {
   arousal: number;
 }
 
-const BASELINE_VALENCE = 0;
-const BASELINE_AROUSAL = 0.35;
 /** Minutos para que el ánimo vuelva ~a la mitad hacia su base (vida media). */
 const HALF_LIFE_MIN = 20;
 
 /**
+ * Ánimo del día + de la hora: el punto de equilibrio hacia el que decae el
+ * ánimo NO es plano. Cada día Samara "amanece" un poco distinta (valencia
+ * pseudo-aleatoria estable por fecha), y su energía sube por la tarde y baja de
+ * madrugada. Así tiene un fondo propio aunque nadie le hable (Fase 4).
+ */
+function dailyBaseline(now = new Date()): Mood {
+  // Valencia del día: estable durante el día, cambia cada fecha. Rango ~[-0.18, 0.18].
+  const daySeed = now.getFullYear() * 1000 + (now.getMonth() + 1) * 50 + now.getDate();
+  const valence = (Math.abs(Math.sin(daySeed * 12.9898)) - 0.5) * 0.36;
+  // Energía por hora: pico ~6pm, valle ~6am.
+  const hour = now.getHours() + now.getMinutes() / 60;
+  const arousal = 0.35 + 0.15 * Math.cos(((hour - 18) / 24) * 2 * Math.PI);
+  return { valence, arousal: clamp(arousal, 0.15, 0.6) };
+}
+
+/**
  * El estado de ánimo de Samara. Es global (ella es una sola persona) y se
- * desvanece hacia un punto neutral con el tiempo, como en una persona real.
+ * desvanece con el tiempo hacia el "ánimo del día/hora", como una persona real.
  *
  * Respaldado en SQLite: al reiniciar, retoma el ánimo que tenía (ya con el
  * decaimiento correspondiente al tiempo que estuvo apagada).
  */
 export class EmotionState {
-  private valence = BASELINE_VALENCE;
-  private arousal = BASELINE_AROUSAL;
+  private valence = 0;
+  private arousal = 0.35;
   private lastUpdate = Date.now();
   private db: DB;
 
@@ -37,13 +51,14 @@ export class EmotionState {
     this.load();
   }
 
-  /** Aplica el decaimiento temporal hacia la base. */
+  /** Aplica el decaimiento temporal hacia el ánimo del día/hora. */
   private decay(): void {
     const minutes = (Date.now() - this.lastUpdate) / 60000;
     if (minutes <= 0) return;
+    const base = dailyBaseline();
     const k = Math.pow(0.5, minutes / HALF_LIFE_MIN);
-    this.valence = BASELINE_VALENCE + (this.valence - BASELINE_VALENCE) * k;
-    this.arousal = BASELINE_AROUSAL + (this.arousal - BASELINE_AROUSAL) * k;
+    this.valence = base.valence + (this.valence - base.valence) * k;
+    this.arousal = base.arousal + (this.arousal - base.arousal) * k;
     this.lastUpdate = Date.now();
   }
 

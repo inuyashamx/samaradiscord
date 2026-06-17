@@ -49,5 +49,9 @@ export const config = {
     // Reflexión: cada cuántas interacciones Samara "repasa" lo vivido y saca
     // conclusiones/opiniones propias que guarda como recuerdos. 0 = desactivado.
     reflectionEvery: Number(process.env.REFLECTION_EVERY ?? 12),
+    // Estilo de "chat real": fuerza minúsculas, sin acentos/puntos/signos de
+    // apertura. El modelo no obedece esto solo, así que se aplica al texto.
+    // Pon CASUAL_STYLE=false para escritura normal con ortografía.
+    casualStyle: (process.env.CASUAL_STYLE ?? 'true').toLowerCase() !== 'false',
   },
 } as const;

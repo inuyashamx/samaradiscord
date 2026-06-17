@@ -9,9 +9,28 @@ import { config } from '../config.js';
 import type { Mind, Perception } from '../mind/mind.js';
 import type { ChatHistory } from '../mind/history.js';
 
-/** Normaliza el texto a "chat real": sin saltos de línea (todo en una línea). */
+/** Quita los saltos de línea (todo en una sola línea). */
 function cleanText(text: string): string {
   return text.replace(/\s*\n+\s*/g, ' ').trim();
+}
+
+/**
+ * Estilo "chat real": el modelo escribe con ortografía perfecta por más que se
+ * le pida lo contrario, así que normalizamos el texto. Minúsculas, sin acentos
+ * (conservando la ñ), sin puntos finales ni "...", sin signos de apertura ¿¡.
+ */
+function casualize(text: string): string {
+  let t = cleanText(text).toLowerCase();
+  t = t.replace(/[¿¡]/g, '');
+  // quita acentos (tilde aguda y diéresis); conserva la ñ (lleva otra tilde)
+  t = t.normalize('NFD').replace(/[́̈]/g, '').normalize('NFC');
+  t = t.replace(/\.{2,}/g, ' ').replace(/\.(?=\s|$)/g, ''); // "..." y puntos finales
+  return t.replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Aplica el estilo configurado al texto que se va a enviar. */
+function styleOutput(text: string): string {
+  return config.behavior.casualStyle ? casualize(text) : cleanText(text);
 }
 
 /**
@@ -137,7 +156,7 @@ export class DiscordBody {
       if (!text) return; // decidió quedarse callada
       if ('sendTyping' in msg.channel) await msg.channel.sendTyping();
       await new Promise((r) => setTimeout(r, Math.min(text.length * 30, 3500)));
-      const clean = cleanText(text);
+      const clean = styleOutput(text);
       if ('send' in msg.channel) await msg.channel.send(clean);
       this.logSamara(msg.channelId, clean);
     } catch (err) {
@@ -151,7 +170,7 @@ export class DiscordBody {
    * después, para que no quede ambiguo a qué contesta.
    */
   private async deliver(msg: Message, text: string): Promise<void> {
-    const clean = cleanText(text);
+    const clean = styleOutput(text);
     const movedOn = msg.channel.lastMessageId !== msg.id; // entró algo después
     if (movedOn) {
       await msg.reply(clean); // cita para desambiguar

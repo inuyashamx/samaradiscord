@@ -69,7 +69,13 @@ export class OpenAIProvider implements LLMProvider {
     const convo: unknown[] = [...messages];
 
     for (let i = 0; i < 3; i++) {
-      const params = { ...this.baseParams(opts), messages: convo, tools: oaiTools };
+      // forTools: algunos modelos (gpt-5.x) no aceptan reasoning_effort junto
+      // con herramientas en chat completions, así que lo omitimos.
+      const params = {
+        ...this.baseParams(opts, { forTools: true }),
+        messages: convo,
+        tools: oaiTools,
+      };
       const res = await this.createWithFallback(params);
       const m = res.choices[0]?.message;
       if (!m) return '...';
@@ -104,13 +110,17 @@ export class OpenAIProvider implements LLMProvider {
    * (o1/o3/gpt-5...) no aceptan temperatura y "piensan" gastando tokens, así
    * que necesitan un presupuesto mínimo o devuelven vacío.
    */
-  private baseParams(opts: ChatOptions): Record<string, unknown> {
+  private baseParams(
+    opts: ChatOptions,
+    { forTools = false }: { forTools?: boolean } = {}
+  ): Record<string, unknown> {
     const model = opts.model ?? config.openai.model;
     const isReasoning = /^(o\d|gpt-5)/i.test(model);
     const params: Record<string, unknown> = { model };
     if (isReasoning) {
       params.max_completion_tokens = Math.max(opts.maxTokens ?? 400, 512);
-      params.reasoning_effort = 'low';
+      // gpt-5.x rechaza reasoning_effort cuando hay herramientas presentes.
+      if (!forTools) params.reasoning_effort = 'low';
     } else {
       params.max_completion_tokens = opts.maxTokens ?? 400;
       params.temperature = opts.temperature ?? 0.75;
@@ -118,24 +128,34 @@ export class OpenAIProvider implements LLMProvider {
     return params;
   }
 
-  /** Si el modelo no acepta algún parámetro, lo quita y reintenta una vez. */
+  /**
+   * Si el modelo rechaza un parámetro (400 con un `param`), lo quitamos y
+   * reintentamos. Hasta 3 veces, por si hay más de uno incompatible. No depende
+   * del `code` (a veces viene null), solo de qué parámetro señala la API.
+   */
   private async createWithFallback(
     params: Record<string, unknown>
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
-    try {
-      return await this.client.chat.completions.create(
-        params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
-      );
-    } catch (err) {
-      const e = err as { code?: string; param?: string };
-      if (e?.code === 'unsupported_parameter' && e.param && e.param in params) {
-        const { [e.param]: _omit, ...rest } = params;
+    let current = { ...params };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
         return await this.client.chat.completions.create(
-          rest as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+          current as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
         );
+      } catch (err) {
+        const e = err as { status?: number; param?: string };
+        if (e?.status === 400 && e.param && e.param in current && e.param !== 'messages') {
+          const { [e.param]: _omit, ...rest } = current;
+          current = rest;
+          continue;
+        }
+        throw err;
       }
-      throw err;
     }
+    // Último intento: si vuelve a fallar, que propague el error.
+    return await this.client.chat.completions.create(
+      current as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+    );
   }
 
   async embed(text: string): Promise<number[]> {

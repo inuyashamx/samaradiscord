@@ -208,6 +208,22 @@ pm2 startup              # ejecuta el comando que imprime
 
 Para actualizar tras cambios: `git pull && npm install && pm2 restart samara`.
 
+### Alternativa: Docker (recomendado en servidores viejos o compartidos)
+
+Si el servidor tiene un SO antiguo (GLIBC/Python viejos) o no quieres instalar
+Node en el host, corre Samara en un contenedor — trae su propio entorno moderno:
+
+```bash
+cd samaradiscord
+cp .env.example .env && nano .env     # tus claves (no se copia a la imagen)
+docker compose up -d --build
+docker compose logs -f samara         # ver que arrancó
+```
+
+La memoria/estado vive en `./data` del host (volumen), así que persiste entre
+reinicios y actualizaciones. Para actualizar: `git pull && docker compose up -d --build`.
+Docker reinicia el bot solo si se cae o si reinicia la máquina.
+
 > **Importante:** usa el script `start` (producción), no `dev` (watch). El archivo
 > `data/samara.db` (toda la memoria/estado de Samara) vive en el disco de la VM y
 > persiste entre reinicios automáticamente — haz copias de seguridad de ese archivo.

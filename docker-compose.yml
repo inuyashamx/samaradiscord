@@ -1,0 +1,11 @@
+services:
+  samara:
+    build: .
+    # Carga tus claves desde el .env del host (no se copia a la imagen).
+    env_file: .env
+    # La memoria/estado de Samara vive en el disco del host y persiste:
+    # ./data en el servidor <-> /app/data dentro del contenedor.
+    volumes:
+      - ./data:/app/data
+    # Se reinicia sola si se cae o si reinicias la VM (con Docker activo).
+    restart: unless-stopped

@@ -133,6 +133,21 @@ export class MemoryStore {
     return rows.reverse(); // del más viejo al más nuevo
   }
 
+  /** Lo último que dijo una persona concreta (para "qué sé de ti"). */
+  recentByAuthor(authorId: string, limit = 6): MemoryRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, channel_id AS channelId, author_id AS authorId,
+                author_name AS authorName, content, kind, importance,
+                created_at AS createdAt
+         FROM memories
+         WHERE author_id = ? AND kind = 'episodic'
+         ORDER BY created_at DESC LIMIT ?`
+      )
+      .all(authorId, limit) as MemoryRecord[];
+    return rows.reverse();
+  }
+
   count(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {
       n: number;

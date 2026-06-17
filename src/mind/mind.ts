@@ -24,7 +24,7 @@ export interface TurnDecision {
 }
 
 /** Cuántos recuerdos de largo plazo recuperar por respuesta. */
-const RECALL_K = 5;
+const RECALL_K = 8;
 /** Solo guardamos como recuerdo lo que tenga algo de sustancia. */
 const MIN_MEMORABLE_LENGTH = 12;
 
@@ -239,7 +239,9 @@ Responde SOLO con JSON, sin texto extra:
 
     // Su tono refleja su ánimo actual y cómo se lleva con esta persona.
     const rel = this.relationships.get(p.authorId);
-    const stateNote = this.stateNote(rel?.authorName ?? p.authorName, rel);
+    // Lo que ya sabe de esta persona (cosas que dijo antes) — para "qué sé de ti".
+    const personFacts = this.memory.recentByAuthor(p.authorId, 6);
+    const stateNote = this.stateNote(rel?.authorName ?? p.authorName, rel, personFacts);
 
     const messages = this.buildPrompt(p.channelId, recalled, { state: stateNote });
     const reply = await this.llm.chat(messages);
@@ -334,13 +336,22 @@ Responde SOLO con JSON, sin texto extra:
     return ideas;
   }
 
-  /** Texto del estado interno (ánimo + relación) para inyectar en el prompt. */
-  private stateNote(name: string, rel: ReturnType<Relationships['get']>): string {
-    return [
+  /** Texto del estado interno (ánimo + relación + lo que sabe de la persona). */
+  private stateNote(
+    name: string,
+    rel: ReturnType<Relationships['get']>,
+    personFacts: { content: string }[] = []
+  ): string {
+    const lines = [
       `Tu estado de ánimo ahora: ${this.emotion.describe()}.`,
       `Sobre ${name}: ${this.relationships.describe(rel)}`,
-      'Deja que esto tiña tu tono y tus ganas de hablar, pero NO lo declares explícitamente.',
-    ].join('\n');
+    ];
+    if (personFacts.length > 0) {
+      lines.push(`Cosas que ${name} te ha contado o dicho antes:`);
+      for (const f of personFacts) lines.push(`- "${f.content}"`);
+    }
+    lines.push('Deja que esto tiña tu tono y úsalo si viene al caso, pero NO lo declares como si leyeras una ficha.');
+    return lines.join('\n');
   }
 
   /**

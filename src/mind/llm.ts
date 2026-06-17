@@ -30,7 +30,7 @@ export class OpenAIProvider implements LLMProvider {
     const res = await this.client.chat.completions.create({
       model: opts.model ?? config.openai.model,
       messages,
-      temperature: opts.temperature ?? 0.9, // alto = más personalidad/variedad
+      temperature: opts.temperature ?? 0.75, // algo de variedad sin divagar
       max_tokens: opts.maxTokens ?? 400,
     });
     return res.choices[0]?.message?.content?.trim() ?? '...';

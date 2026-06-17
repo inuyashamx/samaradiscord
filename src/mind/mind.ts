@@ -38,7 +38,6 @@ const MIN_MEMORABLE_LENGTH = 12;
  * Fase 2: + estado de ánimo y relaciones por persona.
  */
 export class Mind {
-  private stm = new ShortTermMemory();
   /** Interacciones acumuladas desde la última reflexión. */
   private interactionsSinceReflection = 0;
 
@@ -47,6 +46,7 @@ export class Mind {
     private memory: MemoryStore,
     private relationships: Relationships,
     private emotion: EmotionState,
+    private stm: ShortTermMemory,
     /** Dónde "vive" esta instancia: Discord o el juego. El cuerpo lo define. */
     private presence: PresenceContext = 'discord'
   ) {}

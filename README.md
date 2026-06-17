@@ -62,7 +62,8 @@ en qué canal) y decide qué hacer. Por eso el mismo núcleo servirá para el ju
 ### 🧠 Memoria en capas
 
 1. **Memoria de trabajo** (`short-term-memory.ts`): los últimos N mensajes por
-   canal, en crudo. Lo que "tiene en mente" ahora mismo.
+   canal, en crudo. Lo que "tiene en mente" ahora mismo. Persistente: tras un
+   reinicio retoma el hilo exacto de la conversación.
 2. **Memoria de largo plazo** (`memory.ts`): cada mensaje significativo se guarda
    con su *embedding* en una base vectorial (SQLite + `sqlite-vec`). Al responder,
    recupera por **similitud semántica** los recuerdos más relevantes al tema y los
@@ -89,7 +90,8 @@ Samara *considera* romper el silencio o hacerle plática a quien quedó sin resp
 ### ❤️ Emociones y relaciones
 
 - **Ánimo** (`emotion.ts`): valencia (bien/mal) y energía, que **decaen hacia
-  neutral** con el tiempo. Tiñe su tono.
+  neutral** con el tiempo. Tiñe su tono. Persistente: al reiniciar retoma el
+  ánimo que tenía (con el decaimiento del tiempo que estuvo apagada).
 - **Relaciones** (`relationships.ts`): por cada persona guarda **afinidad** y
   **familiaridad**. Trata distinto a un desconocido que a un amigo → de ahí salen
   sus amistades. Es persistente entre sesiones.

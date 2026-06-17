@@ -5,6 +5,7 @@ import { openDb } from '../mind/db.js';
 import { MemoryStore } from '../mind/memory.js';
 import { Relationships } from '../mind/relationships.js';
 import { EmotionState } from '../mind/emotion.js';
+import { ShortTermMemory } from '../mind/short-term-memory.js';
 import { Mind } from '../mind/mind.js';
 
 /**
@@ -20,8 +21,9 @@ async function main(): Promise<void> {
   const db = openDb();
   const memory = new MemoryStore(db);
   const relationships = new Relationships(db);
-  const emotion = new EmotionState();
-  const mind = new Mind(llm, memory, relationships, emotion, 'discord');
+  const emotion = new EmotionState(db);
+  const stm = new ShortTermMemory(db);
+  const mind = new Mind(llm, memory, relationships, emotion, stm, 'discord');
 
   const channelId = 'terminal'; // canal ficticio para el chat local
   const authorName = process.env.USER || process.env.USERNAME || 'Tú';

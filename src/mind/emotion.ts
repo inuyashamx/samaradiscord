@@ -1,3 +1,5 @@
+import { openDb, type DB } from './db.js';
+
 /** Ánimo de Samara en dos ejes simples. */
 export interface Mood {
   /** Qué tan bien/mal se siente, -1 (mal) a 1 (bien). */
@@ -15,13 +17,25 @@ const HALF_LIFE_MIN = 20;
  * El estado de ánimo de Samara. Es global (ella es una sola persona) y se
  * desvanece hacia un punto neutral con el tiempo, como en una persona real.
  *
- * Fase 2: vive en memoria (se reinicia al apagar). El ánimo es efímero por
- * naturaleza, así que está bien; lo que persiste son las relaciones.
+ * Respaldado en SQLite: al reiniciar, retoma el ánimo que tenía (ya con el
+ * decaimiento correspondiente al tiempo que estuvo apagada).
  */
 export class EmotionState {
   private valence = BASELINE_VALENCE;
   private arousal = BASELINE_AROUSAL;
   private lastUpdate = Date.now();
+  private db: DB;
+
+  constructor(db: DB = openDb()) {
+    this.db = db;
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `);
+    this.load();
+  }
 
   /** Aplica el decaimiento temporal hacia la base. */
   private decay(): void {
@@ -38,6 +52,7 @@ export class EmotionState {
     this.decay();
     this.valence = clamp(this.valence + dValence, -1, 1);
     this.arousal = clamp(this.arousal + dArousal, 0, 1);
+    this.save();
   }
 
   current(): Mood {
@@ -52,6 +67,35 @@ export class EmotionState {
       valence > 0.35 ? 'de buen humor, animada' : valence < -0.35 ? 'algo molesta o desanimada' : 'tranquila, neutral';
     const energia = arousal > 0.6 ? 'con mucha energía' : arousal < 0.25 ? 'con poca energía, apagada' : 'con energía normal';
     return `${tono}, ${energia}`;
+  }
+
+  private load(): void {
+    const row = this.db.prepare(`SELECT value FROM state WHERE key = 'emotion'`).get() as
+      | { value: string }
+      | undefined;
+    if (!row) return;
+    try {
+      const s = JSON.parse(row.value) as Partial<Mood> & { lastUpdate?: number };
+      if (typeof s.valence === 'number') this.valence = s.valence;
+      if (typeof s.arousal === 'number') this.arousal = s.arousal;
+      if (typeof s.lastUpdate === 'number') this.lastUpdate = s.lastUpdate;
+    } catch {
+      // estado corrupto: arranca desde la base
+    }
+  }
+
+  private save(): void {
+    const value = JSON.stringify({
+      valence: this.valence,
+      arousal: this.arousal,
+      lastUpdate: this.lastUpdate,
+    });
+    this.db
+      .prepare(
+        `INSERT INTO state (key, value) VALUES ('emotion', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run(value);
   }
 }
 

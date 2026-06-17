@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Artefactos de Playwright MCP (capturas de navegación)
+.playwright-mcp/
+
+# Estado persistente de Samara (memoria, emociones, relaciones)
+data/
+*.db
+*.db-journal
+*.sqlite

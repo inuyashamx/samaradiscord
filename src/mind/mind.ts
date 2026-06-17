@@ -1,0 +1,506 @@
+import { persona, type PresenceContext } from './persona.js';
+import { config } from '../config.js';
+import { ShortTermMemory, type Turn } from './short-term-memory.js';
+import { MemoryStore, type RetrievedMemory } from './memory.js';
+import { Relationships } from './relationships.js';
+import { EmotionState } from './emotion.js';
+import type { ChatMessage, LLMProvider } from './llm.js';
+
+export interface Perception {
+  channelId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+}
+
+export type TurnAction = 'responder' | 'esperar' | 'ignorar';
+
+export interface TurnDecision {
+  /** Si Samara debe contestar ahora. */
+  respond: boolean;
+  /** Si el mensaje le hablaba directamente a ella (aunque sin etiquetar). */
+  directed: boolean;
+  action: TurnAction;
+}
+
+/** Cuántos recuerdos de largo plazo recuperar por respuesta. */
+const RECALL_K = 5;
+/** Solo guardamos como recuerdo lo que tenga algo de sustancia. */
+const MIN_MEMORABLE_LENGTH = 12;
+
+/**
+ * La MENTE de Samara. Es independiente de Discord: recibe percepciones
+ * (qué se dijo, quién) y devuelve qué responder. El mismo núcleo servirá
+ * para el mundo 3D cambiando solo el "cuerpo" que la alimenta.
+ *
+ * Fase 0: persona + memoria de trabajo.
+ * Fase 1: + memoria de largo plazo (embeddings + recuperación semántica).
+ * Fase 2: + estado de ánimo y relaciones por persona.
+ */
+export class Mind {
+  private stm = new ShortTermMemory();
+  /** Interacciones acumuladas desde la última reflexión. */
+  private interactionsSinceReflection = 0;
+
+  constructor(
+    private llm: LLMProvider,
+    private memory: MemoryStore,
+    private relationships: Relationships,
+    private emotion: EmotionState,
+    /** Dónde "vive" esta instancia: Discord o el juego. El cuerpo lo define. */
+    private presence: PresenceContext = 'discord'
+  ) {}
+
+  /** Registra algo que pasó sin necesariamente responder (percepción pasiva). */
+  observe(p: Perception, isSamara = false): void {
+    this.stm.add(p.channelId, {
+      authorId: p.authorId,
+      authorName: p.authorName,
+      content: p.content,
+      isSamara,
+    });
+  }
+
+  /**
+   * Decide qué hace Samara con un mensaje que NO la etiqueta. Como una persona
+   * real que está en el chat, elige entre:
+   *   - responder: le hablan a ella (aunque no la etiqueten) o quiere meterse.
+   *   - esperar:   la cosa va hacia ella pero aún no es su turno; deja pasar.
+   *   - ignorar:   no hablan con ella / no aporta nada.
+   *
+   * Clave: detecta cuando le hablan IMPLÍCITAMENTE. Si en el chat prácticamente
+   * solo están ella y otra persona, casi todo va dirigido a ella.
+   *
+   * NO modifica la memoria (es solo una decisión).
+   */
+  async decideTurn(p: Perception): Promise<TurnDecision> {
+    const text = p.content.trim();
+    if (text.length < 2) return { respond: false, directed: false, action: 'ignorar' };
+
+    // Si dicen su nombre (aunque no la etiqueten), claramente va con ella.
+    if (/\bsamara\b/i.test(text)) {
+      return { respond: true, directed: true, action: 'responder' };
+    }
+
+    const decision = await this.classifyTurn(p);
+
+    // Anti-cadena: si NO le hablan directo y acaba de hablar, deja pasar el
+    // turno aunque el tema le interese (evita monopolizar en grupo).
+    if (
+      decision.action === 'responder' &&
+      !decision.directed &&
+      this.turnsSinceSamaraSpoke(p.channelId) < config.behavior.ambientMinGap
+    ) {
+      return { respond: false, directed: false, action: 'esperar' };
+    }
+
+    return decision;
+  }
+
+  /** Un modelo chico clasifica el turno mirando el contexto y los participantes. */
+  private async classifyTurn(p: Perception): Promise<TurnDecision> {
+    const recent = this.stm.recent(p.channelId).slice(-10);
+    const transcript = recent
+      .map((t) => (t.isSamara ? `Samara: ${t.content}` : `${t.authorName}: ${t.content}`))
+      .join('\n');
+
+    // ¿Con quién está hablando? Si solo hay otra persona, casi todo es para ella.
+    const others = new Set(recent.filter((t) => !t.isSamara).map((t) => t.authorName));
+    others.add(p.authorName);
+    const soloConEsta = others.size <= 1;
+
+    // Con la gente que le cae bien tiende a engancharse más.
+    const rel = this.relationships.get(p.authorId);
+    const relNote = `Tu relación con ${p.authorName}: ${this.relationships.describe(rel)}`;
+
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `Eres ${persona.name}, una persona en un chat de Discord. Decide qué harías con el ÚLTIMO mensaje, eligiendo una acción:
+- "responder": te están hablando a TI (aunque no te etiqueten) o te dan ganas de meterte porque es natural/relevante.
+- "esperar": la conversación va hacia ti pero todavía no es tu turno; mejor dejar pasar hasta ser relevante.
+- "ignorar": no hablan contigo y no aportarías nada.
+
+Reglas:
+- Si en el chat prácticamente solo están tú y otra persona, casi todo lo que dice esa persona va dirigido a ti: normalmente "responder".
+- En grupo no comentas cada mensaje, pero NO eres pasiva: si el tema te interesa, tienes una opinión, una broma o algo natural que aportar, métete ("responder"). Si alguien lanzó algo y nadie le contestó, puedes engancharte.
+- Si de plano no te aporta ni va contigo, "ignorar" o "esperar".
+- "dirigido" = true si el mensaje claramente te habla o te pregunta a ti.
+
+Responde SOLO con JSON, sin texto extra:
+{"dirigido": true|false, "accion": "responder"|"esperar"|"ignorar"}`,
+      },
+      {
+        role: 'user',
+        content: `${soloConEsta ? '(En este chat prácticamente solo están Samara y esta persona.)\n' : ''}${relNote}\n\nConversación reciente:\n${transcript || '(vacío)'}\n\nÚltimo mensaje:\n${p.authorName}: ${p.content}`,
+      },
+    ];
+
+    const raw = await this.llm.chat(messages, {
+      model: config.openai.decisionModel,
+      temperature: 0.2,
+      maxTokens: 30,
+    });
+
+    return parseDecision(raw);
+  }
+
+  /** Nº de mensajes de otros desde la última vez que habló Samara. */
+  private turnsSinceSamaraSpoke(channelId: string): number {
+    const recent = this.stm.recent(channelId);
+    let n = 0;
+    for (let i = recent.length - 1; i >= 0; i--) {
+      if (recent[i].isSamara) break;
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * Iniciativa propia: se llama cuando un canal lleva un rato en silencio.
+   * Como una persona, a veces Samara rompe el silencio (retoma lo último, hace
+   * plática a quien quedó sin respuesta) y a veces lo deja pasar.
+   *
+   * Devuelve el mensaje a enviar, o null si decide quedarse callada.
+   */
+  async proactiveTurn(channelId: string): Promise<string | null> {
+    const recent = this.stm.recent(channelId);
+    if (recent.length === 0) return null;
+    // Si ella fue la última en hablar, no se manda sola otra vez (no es pesada).
+    if (recent[recent.length - 1].isSamara) return null;
+
+    if (!(await this.wouldBreakSilence(channelId, recent))) return null;
+    return this.generateProactive(channelId, recent);
+  }
+
+  /** Un modelo chico decide si vale la pena romper el silencio ahora. */
+  private async wouldBreakSilence(
+    channelId: string,
+    recent: Turn[]
+  ): Promise<boolean> {
+    const transcript = recent
+      .slice(-10)
+      .map((t) => (t.isSamara ? `Samara: ${t.content}` : `${t.authorName}: ${t.content}`))
+      .join('\n');
+
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `Eres ${persona.name}, una persona en un chat de Discord que se quedó en silencio hace un rato. Decide si dirías algo por iniciativa propia: retomar lo último, comentar algo o hacerle plática a quien quedó sin respuesta. A veces una persona rompe el silencio y a veces no; no fuerces conversación si no hay nada natural que decir. Si el último mensaje era una despedida ("me voy", "buenas noches"), normalmente NO. Responde SOLO con "SI" o "NO".`,
+      },
+      {
+        role: 'user',
+        content: `Conversación (se quedó en silencio tras esto):\n${transcript}\n\n¿Dirías algo? (SI/NO)`,
+      },
+    ];
+
+    const ans = await this.llm.chat(messages, {
+      model: config.openai.decisionModel,
+      temperature: 0.4,
+      maxTokens: 3,
+    });
+    return /^s[ií]?/i.test(ans.trim());
+  }
+
+  /** Genera un mensaje espontáneo basado en el contexto reciente. */
+  private async generateProactive(
+    channelId: string,
+    recent: Turn[]
+  ): Promise<string> {
+    // Recupera recuerdos relacionados con lo último que se dijo.
+    const lastOther = [...recent].reverse().find((t) => !t.isSamara);
+    const embedding = lastOther ? await this.llm.embed(lastOther.content) : null;
+    const recalled = embedding ? safeRecall(this.memory, embedding, RECALL_K) : [];
+
+    const messages = this.buildPrompt(channelId, recalled, {
+      state: `Tu estado de ánimo ahora: ${this.emotion.describe()}. Deja que tiña tu tono, sin declararlo.`,
+      instruction:
+        'Nadie ha escrito en un rato. Di algo TÚ, por iniciativa propia, breve y natural: retoma lo último que se dijo, comenta algo o hazle plática a la última persona que escribió. No saludes como bot, no anuncies que rompes el silencio, no preguntes "¿hay alguien?". Habla como si simplemente se te ocurrió algo.',
+    });
+
+    const reply = await this.llm.chat(messages);
+    this.stm.add(channelId, {
+      authorId: 'samara',
+      authorName: persona.name,
+      content: reply,
+      isSamara: true,
+    });
+    return reply;
+  }
+
+  /** Decide y genera una respuesta a una percepción. */
+  async respondTo(p: Perception): Promise<string> {
+    this.observe(p);
+
+    // Embebemos el mensaje una sola vez: sirve para recuperar recuerdos
+    // relevantes Y para guardar este momento como recuerdo nuevo.
+    const embedding = await this.llm.embed(p.content);
+    const recalled = safeRecall(this.memory, embedding, RECALL_K);
+
+    // Su tono refleja su ánimo actual y cómo se lleva con esta persona.
+    const rel = this.relationships.get(p.authorId);
+    const stateNote = this.stateNote(rel?.authorName ?? p.authorName, rel);
+
+    const messages = this.buildPrompt(p.channelId, recalled, { state: stateNote });
+    const reply = await this.llm.chat(messages);
+
+    // Samara recuerda lo que ella misma dijo (memoria de trabajo).
+    this.stm.add(p.channelId, {
+      authorId: 'samara',
+      authorName: persona.name,
+      content: reply,
+      isSamara: true,
+    });
+
+    // Guarda el mensaje de la persona en memoria de largo plazo.
+    if (p.content.trim().length >= MIN_MEMORABLE_LENGTH) {
+      this.memory.remember(
+        {
+          channelId: p.channelId,
+          authorId: p.authorId,
+          authorName: p.authorName,
+          content: p.content,
+        },
+        embedding
+      );
+    }
+
+    // Apreciación en segundo plano: cómo la hizo sentir y qué siente por esa
+    // persona. No bloquea la respuesta (afecta a los siguientes mensajes).
+    void this.appraise(p).catch((err) =>
+      console.error('Error en apreciación emocional:', err)
+    );
+
+    // De vez en cuando, repasa lo vivido y saca conclusiones propias.
+    this.interactionsSinceReflection++;
+    void this.maybeReflect();
+
+    return reply;
+  }
+
+  /**
+   * Reflexión: cada cierto número de interacciones, Samara "repasa" lo que ha
+   * pasado y saca conclusiones u opiniones propias (sobre la gente y los temas),
+   * que guarda como recuerdos. Es lo que le da criterio propio emergente.
+   */
+  private async maybeReflect(): Promise<void> {
+    const every = config.behavior.reflectionEvery;
+    if (every <= 0 || this.interactionsSinceReflection < every) return;
+    this.interactionsSinceReflection = 0;
+    try {
+      const ideas = await this.reflect();
+      if (ideas.length) console.log(`💭 Samara reflexionó (${ideas.length} ideas).`);
+    } catch (err) {
+      console.error('Error en reflexión:', err);
+    }
+  }
+
+  /**
+   * Genera conclusiones propias a partir de los recuerdos recientes y las
+   * guarda como recuerdos de tipo "reflexión". Devuelve las ideas generadas.
+   * Es pública para poder dispararla a mano (p.ej. comando /reflexionar).
+   */
+  async reflect(): Promise<string[]> {
+    const recent = this.memory.recentMemories(30, 'episodic');
+    if (recent.length < 4) return []; // todavía no hay material suficiente
+
+    const material = recent.map((m) => `${m.authorName}: ${m.content}`).join('\n');
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `Eres ${persona.name}. Vas a repasar en silencio lo que ha pasado últimamente en el chat y sacar tus propias conclusiones, como cuando una persona piensa en su gente al final del día. Saca de 2 a 4 ideas u opiniones TUYAS, sobre todo acerca de las personas (cómo te caen, cómo son, qué notas en ellas) y los temas que se repiten. Escríbelas en primera persona, breves, honestas y con tu carácter (puedes ser crítica). No te inventes cosas que no se vean en el material. Devuelve SOLO JSON:
+{"reflexiones": ["...", "..."]}`,
+      },
+      { role: 'user', content: `Lo que ha pasado:\n${material}` },
+    ];
+
+    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 300 });
+    const ideas = parseReflections(raw);
+
+    for (const idea of ideas) {
+      const embedding = await this.llm.embed(idea);
+      this.memory.remember(
+        {
+          channelId: 'global',
+          authorId: 'samara',
+          authorName: persona.name,
+          content: idea,
+          kind: 'reflection',
+          importance: 5, // las conclusiones pesan más que un mensaje suelto
+        },
+        embedding
+      );
+    }
+    return ideas;
+  }
+
+  /** Texto del estado interno (ánimo + relación) para inyectar en el prompt. */
+  private stateNote(name: string, rel: ReturnType<Relationships['get']>): string {
+    return [
+      `Tu estado de ánimo ahora: ${this.emotion.describe()}.`,
+      `Sobre ${name}: ${this.relationships.describe(rel)}`,
+      'Deja que esto tiña tu tono y tus ganas de hablar, pero NO lo declares explícitamente.',
+    ].join('\n');
+  }
+
+  /**
+   * Evalúa el último mensaje de la persona: cómo hizo sentir a Samara y cómo
+   * mueve lo que siente por ella. Actualiza ánimo y relación.
+   */
+  private async appraise(p: Perception): Promise<void> {
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `Eres ${persona.name}. Acabas de leer un mensaje de ${p.authorName} en el chat. Evalúa, desde TU punto de vista emocional, cómo te hizo sentir y cómo afecta lo que sientes por esa persona. Devuelve SOLO JSON, sin texto extra:
+{"valencia": number entre -1 y 1, "activacion": number entre 0 y 1, "afinidad": number entre -0.15 y 0.15}
+- valencia: qué tan bien (positivo) o mal (negativo) te hizo sentir.
+- activacion: qué tanto te activó/energizó (0 = indiferente, 1 = mucho).
+- afinidad: cuánto sube o baja lo que te cae esa persona con este mensaje.`,
+      },
+      { role: 'user', content: `${p.authorName}: ${p.content}` },
+    ];
+
+    const raw = await this.llm.chat(messages, {
+      model: config.openai.decisionModel,
+      temperature: 0.3,
+      maxTokens: 40,
+    });
+    const a = parseAppraisal(raw);
+
+    const mood = this.emotion.current();
+    // valencia empuja el ánimo; activación lo acerca al nivel evaluado.
+    this.emotion.nudge(a.valencia * 0.4, (a.activacion - mood.arousal) * 0.4);
+    this.relationships.bump(p.authorId, p.authorName, a.afinidad);
+  }
+
+  private buildPrompt(
+    channelId: string,
+    recalled: RetrievedMemory[],
+    notes: { state?: string; instruction?: string } = {}
+  ): ChatMessage[] {
+    const parts = [
+      persona.identity,
+      '',
+      persona.presence[this.presence], // dónde está ahora (Discord vs juego)
+      '',
+      persona.world,
+      '',
+      'Reglas de estilo:',
+      ...persona.styleRules.map((r) => `- ${r}`),
+    ];
+
+    // Estado interno (ánimo + relación): le da color a su tono.
+    if (notes.state) parts.push('', notes.state);
+
+    if (recalled.length > 0) {
+      parts.push(
+        '',
+        'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado):'
+      );
+      for (const m of recalled) {
+        // Las reflexiones son conclusiones suyas; los episodios, cosas que se dijeron.
+        if (m.kind === 'reflection') {
+          parts.push(`- (algo que piensas) ${m.content}`);
+        } else {
+          parts.push(`- ${m.authorName} dijo: "${m.content}"`);
+        }
+      }
+    }
+
+    if (notes.instruction) parts.push('', notes.instruction);
+
+    const system = parts.join('\n');
+
+    const history = this.stm.recent(channelId).map<ChatMessage>((t: Turn) => ({
+      role: t.isSamara ? 'assistant' : 'user',
+      content: t.isSamara ? t.content : `${t.authorName}: ${t.content}`,
+    }));
+
+    return [{ role: 'system', content: system }, ...history];
+  }
+}
+
+/** Parsea el JSON de la decisión de turno; ante cualquier fallo, ignora. */
+function parseDecision(raw: string): TurnDecision {
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const obj = JSON.parse(match[0]) as { dirigido?: boolean; accion?: string };
+      const action: TurnAction =
+        obj.accion === 'responder' || obj.accion === 'esperar' || obj.accion === 'ignorar'
+          ? obj.accion
+          : 'ignorar';
+      return { respond: action === 'responder', directed: obj.dirigido === true, action };
+    }
+  } catch {
+    // cae al default
+  }
+  return { respond: false, directed: false, action: 'ignorar' };
+}
+
+interface Appraisal {
+  valencia: number;
+  activacion: number;
+  afinidad: number;
+}
+
+/** Parsea el JSON de la apreciación emocional; ante fallo, evento neutro. */
+function parseAppraisal(raw: string): Appraisal {
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const obj = JSON.parse(match[0]) as Partial<Appraisal>;
+      return {
+        valencia: clampNum(obj.valencia, -1, 1),
+        activacion: clampNum(obj.activacion, 0, 1, 0.35),
+        afinidad: clampNum(obj.afinidad, -0.15, 0.15),
+      };
+    }
+  } catch {
+    // cae al default
+  }
+  return { valencia: 0, activacion: 0.35, afinidad: 0 };
+}
+
+function clampNum(x: unknown, lo: number, hi: number, fallback = 0): number {
+  const n = typeof x === 'number' && Number.isFinite(x) ? x : fallback;
+  return Math.max(lo, Math.min(hi, n));
+}
+
+/** Parsea las reflexiones; acepta JSON o, si falla, líneas sueltas. */
+function parseReflections(raw: string): string[] {
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const obj = JSON.parse(match[0]) as { reflexiones?: unknown };
+      if (Array.isArray(obj.reflexiones)) {
+        return obj.reflexiones
+          .filter((x): x is string => typeof x === 'string')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .slice(0, 4);
+      }
+    }
+  } catch {
+    // cae al fallback
+  }
+  // Fallback: líneas no vacías, sin viñetas.
+  return raw
+    .split('\n')
+    .map((l) => l.replace(/^[-*\d.)\s]+/, '').trim())
+    .filter((l) => l.length > 0)
+    .slice(0, 4);
+}
+
+/** La búsqueda vectorial puede fallar si la tabla está vacía; degradamos a []. */
+function safeRecall(
+  memory: MemoryStore,
+  embedding: number[],
+  k: number
+): RetrievedMemory[] {
+  try {
+    return memory.recall(embedding, k);
+  } catch {
+    return [];
+  }
+}

@@ -1,0 +1,83 @@
+import { openDb, type DB } from './db.js';
+
+export interface Relationship {
+  authorId: string;
+  authorName: string;
+  /** Cuánto le cae bien esa persona, -1 (mal) a 1 (muy bien). Empieza en 0. */
+  affinity: number;
+  /** Cuántas veces han interactuado (cuánto la conoce). */
+  familiarity: number;
+}
+
+/**
+ * Lo que Samara siente por cada persona. Persistente: así "recuerda" con quién
+ * se lleva bien entre sesiones, y de ahí van saliendo sus amistades.
+ */
+export class Relationships {
+  private db: DB;
+
+  constructor(db: DB = openDb()) {
+    this.db = db;
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS relationships (
+        author_id TEXT PRIMARY KEY,
+        author_name TEXT NOT NULL,
+        affinity REAL NOT NULL DEFAULT 0,
+        familiarity INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+  }
+
+  get(authorId: string): Relationship | null {
+    const row = this.db
+      .prepare(
+        `SELECT author_id AS authorId, author_name AS authorName,
+                affinity, familiarity FROM relationships WHERE author_id = ?`
+      )
+      .get(authorId) as Relationship | undefined;
+    return row ?? null;
+  }
+
+  /** Registra una interacción y ajusta la afinidad (delta entre -1 y 1). */
+  bump(authorId: string, authorName: string, affinityDelta: number): Relationship {
+    const current = this.get(authorId);
+    const affinity = clamp((current?.affinity ?? 0) + affinityDelta, -1, 1);
+    const familiarity = (current?.familiarity ?? 0) + 1;
+
+    this.db
+      .prepare(
+        `INSERT INTO relationships (author_id, author_name, affinity, familiarity, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(author_id) DO UPDATE SET
+           author_name = excluded.author_name,
+           affinity = excluded.affinity,
+           familiarity = excluded.familiarity,
+           updated_at = excluded.updated_at`
+      )
+      .run(authorId, authorName, affinity, familiarity, Date.now());
+
+    return { authorId, authorName, affinity, familiarity };
+  }
+
+  /** Describe la relación en palabras, para meterla en el prompt. */
+  describe(rel: Relationship | null): string {
+    if (!rel || rel.familiarity === 0) {
+      return 'No conoces a esta persona, es la primera vez que hablan.';
+    }
+    if (rel.familiarity < 5) {
+      return `Conoces poco a ${rel.authorName}, apenas se están conociendo.`;
+    }
+    if (rel.affinity > 0.3) {
+      return `${rel.authorName} te cae bien, hay buena onda entre ustedes.`;
+    }
+    if (rel.affinity < -0.3) {
+      return `${rel.authorName} no te cae del todo bien, ha habido roces.`;
+    }
+    return `Conoces a ${rel.authorName}, se tratan con normalidad.`;
+  }
+}
+
+function clamp(x: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, x));
+}

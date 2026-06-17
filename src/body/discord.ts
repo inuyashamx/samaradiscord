@@ -1,0 +1,143 @@
+import {
+  Client,
+  Events,
+  GatewayIntentBits,
+  Partials,
+  type Message,
+} from 'discord.js';
+import { config } from '../config.js';
+import type { Mind, Perception } from '../mind/mind.js';
+
+/**
+ * El CUERPO en Discord. Traduce eventos de Discord -> percepciones para la
+ * Mente, y respuestas de la Mente -> mensajes de Discord. No tiene lógica de
+ * personalidad: es puramente entrada/salida.
+ */
+export class DiscordBody {
+  private client: Client;
+  /** Temporizador de inactividad por canal (para iniciativa propia). */
+  private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(private mind: Mind) {
+    this.client = new Client({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent, // hay que activarlo en el Developer Portal
+      ],
+      partials: [Partials.Channel],
+    });
+  }
+
+  async start(): Promise<void> {
+    this.client.once(Events.ClientReady, (c) => {
+      console.log(`✅ Samara está en línea como ${c.user.tag}`);
+    });
+
+    this.client.on(Events.MessageCreate, (msg) => this.onMessage(msg));
+
+    await this.client.login(config.discord.token);
+  }
+
+  private async onMessage(msg: Message): Promise<void> {
+    if (msg.author.bot) return; // ignora a otros bots y a sí misma
+    if (!msg.content) return;
+
+    // Llegó actividad: cancela cualquier "romper silencio" pendiente. Al final
+    // se rearmará, así el temporizador solo dispara cuando el canal queda quieto.
+    this.cancelIdle(msg.channelId);
+
+    const perception: Perception = {
+      channelId: msg.channelId,
+      authorId: msg.author.id,
+      authorName: msg.member?.displayName ?? msg.author.username,
+      content: msg.content,
+    };
+
+    // "Directo" = hablándole a ella: la etiquetan o responden a un mensaje suyo.
+    // En ese caso debe contestar rápido, como en una conversación normal.
+    const mentioned =
+      this.client.user != null && msg.mentions.has(this.client.user);
+    const replyingToHer =
+      this.client.user != null &&
+      msg.mentions.repliedUser?.id === this.client.user.id;
+    const explicitlyDirect = mentioned || replyingToHer;
+
+    // Si la etiquetan o responden a un mensaje suyo, es directo y seguro.
+    // Si no, la mente decide: responder / esperar / ignorar, y de paso si el
+    // mensaje le hablaba a ella (aunque sin etiquetar) para contestar ágil.
+    let direct = explicitlyDirect;
+    if (!explicitlyDirect) {
+      const decision = await this.mind.decideTurn(perception);
+      if (!decision.respond) {
+        this.mind.observe(perception); // deja pasar el turno, pero recuerda el contexto
+        this.armIdle(msg); // por si la conversación se queda muerta
+        return;
+      }
+      direct = decision.directed;
+    }
+
+    try {
+      const reply = await this.mind.respondTo(perception);
+      await this.typeLikeAHuman(msg, reply, direct);
+      await msg.reply(reply);
+    } catch (err) {
+      console.error('Error generando respuesta:', err);
+    } finally {
+      this.armIdle(msg);
+    }
+  }
+
+  /** Programa un posible mensaje espontáneo si el canal queda en silencio. */
+  private armIdle(msg: Message): void {
+    const { proactiveIdleMinSec: min, proactiveIdleMaxSec: max } = config.behavior;
+    if (max <= 0) return; // proactividad desactivada
+
+    const channelId = msg.channelId;
+    this.cancelIdle(channelId);
+    const seconds = min + Math.random() * Math.max(0, max - min);
+    const timer = setTimeout(() => {
+      void this.onIdle(msg);
+    }, seconds * 1000);
+    this.idleTimers.set(channelId, timer);
+  }
+
+  private cancelIdle(channelId: string): void {
+    const timer = this.idleTimers.get(channelId);
+    if (timer) {
+      clearTimeout(timer);
+      this.idleTimers.delete(channelId);
+    }
+  }
+
+  /** Se dispara cuando un canal lleva un rato en silencio. */
+  private async onIdle(msg: Message): Promise<void> {
+    this.idleTimers.delete(msg.channelId);
+    try {
+      const text = await this.mind.proactiveTurn(msg.channelId);
+      if (!text) return; // decidió quedarse callada
+      if ('sendTyping' in msg.channel) await msg.channel.sendTyping();
+      await new Promise((r) => setTimeout(r, Math.min(text.length * 30, 3500)));
+      if ('send' in msg.channel) await msg.channel.send(text);
+    } catch (err) {
+      console.error('Error en mensaje proactivo:', err);
+    }
+  }
+
+  /**
+   * Muestra "escribiendo..." antes de enviar.
+   * - Directo (le hablan a ella): pausa mínima, contesta ágil.
+   * - Ambiental (se mete sola): pausa proporcional al largo, se siente humano.
+   */
+  private async typeLikeAHuman(
+    msg: Message,
+    reply: string,
+    direct: boolean
+  ): Promise<void> {
+    if ('sendTyping' in msg.channel) await msg.channel.sendTyping();
+    const delay = direct
+      ? Math.min(reply.length * 10, 800)
+      : Math.min(Math.max(reply.length * 30, 700), 3500);
+    await new Promise((r) => setTimeout(r, delay));
+  }
+}

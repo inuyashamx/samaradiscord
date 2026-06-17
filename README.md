@@ -178,6 +178,42 @@ npm start
 
 ---
 
+## Despliegue en un servidor (VM Debian/Ubuntu) con PM2
+
+Para que Samara esté encendida 24/7. En la VM:
+
+```bash
+# 1. Node 20+ (vía NodeSource) y herramientas de compilación (better-sqlite3 es nativo)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs build-essential python3 git
+
+# 2. Clonar e instalar
+git clone https://github.com/inuyashamx/samaradiscord.git
+cd samaradiscord
+npm install
+
+# 3. Crear el .env con tus claves (NO viene en el repo)
+cp .env.example .env
+nano .env
+
+# 4. Arrancar con PM2
+sudo npm install -g pm2
+pm2 start ecosystem.config.cjs
+pm2 logs samara          # ver que arrancó bien
+
+# 5. Que reviva sola al reiniciar la máquina
+pm2 save
+pm2 startup              # ejecuta el comando que imprime
+```
+
+Para actualizar tras cambios: `git pull && npm install && pm2 restart samara`.
+
+> **Importante:** usa el script `start` (producción), no `dev` (watch). El archivo
+> `data/samara.db` (toda la memoria/estado de Samara) vive en el disco de la VM y
+> persiste entre reinicios automáticamente — haz copias de seguridad de ese archivo.
+
+---
+
 ## Stack
 
 - **Node.js + TypeScript** (ESM, `tsx`)

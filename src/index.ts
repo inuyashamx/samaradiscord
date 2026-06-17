@@ -4,6 +4,7 @@ import { MemoryStore } from './mind/memory.js';
 import { Relationships } from './mind/relationships.js';
 import { EmotionState } from './mind/emotion.js';
 import { ShortTermMemory } from './mind/short-term-memory.js';
+import { ChatHistory } from './mind/history.js';
 import { Mind } from './mind/mind.js';
 import { DiscordBody } from './body/discord.js';
 
@@ -14,9 +15,12 @@ async function main(): Promise<void> {
   const relationships = new Relationships(db);
   const emotion = new EmotionState(db);
   const stm = new ShortTermMemory(db);
-  console.log(`🧠 Memoria de largo plazo: ${memory.count()} recuerdos`);
+  const history = new ChatHistory(db);
+  console.log(
+    `🧠 Memoria: ${memory.count()} recuerdos · 📜 Historial: ${history.count()} mensajes`
+  );
   const mind = new Mind(llm, memory, relationships, emotion, stm, 'discord');
-  const body = new DiscordBody(mind);
+  const body = new DiscordBody(mind, history);
 
   await body.start();
 }

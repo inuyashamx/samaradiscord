@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import { config } from '../config.js';
 import type { Mind, Perception } from '../mind/mind.js';
+import type { ChatHistory } from '../mind/history.js';
 
 /**
  * El CUERPO en Discord. Traduce eventos de Discord -> percepciones para la
@@ -18,7 +19,10 @@ export class DiscordBody {
   /** Temporizador de inactividad por canal (para iniciativa propia). */
   private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(private mind: Mind) {
+  constructor(
+    private mind: Mind,
+    private history: ChatHistory
+  ) {
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -54,6 +58,9 @@ export class DiscordBody {
       content: msg.content,
     };
 
+    // Historial crudo: registra TODO lo que se dice (sustrato completo).
+    this.history.log(perception.channelId, { ...perception, isSamara: false });
+
     // "Directo" = hablándole a ella: la etiquetan o responden a un mensaje suyo.
     // En ese caso debe contestar rápido, como en una conversación normal.
     const mentioned =
@@ -85,6 +92,7 @@ export class DiscordBody {
       const reply = await this.mind.respondTo(perception);
       await this.typeLikeAHuman(msg, reply, direct);
       await msg.reply(reply);
+      this.logSamara(perception.channelId, reply);
     } catch (err) {
       console.error('Error generando respuesta:', err);
     } finally {
@@ -123,9 +131,21 @@ export class DiscordBody {
       if ('sendTyping' in msg.channel) await msg.channel.sendTyping();
       await new Promise((r) => setTimeout(r, Math.min(text.length * 30, 3500)));
       if ('send' in msg.channel) await msg.channel.send(text);
+      this.logSamara(msg.channelId, text);
     } catch (err) {
       console.error('Error en mensaje proactivo:', err);
     }
+  }
+
+  /** Registra en el historial un mensaje propio de Samara. */
+  private logSamara(channelId: string, content: string): void {
+    const name = this.client.user?.username ?? 'Samara';
+    this.history.log(channelId, {
+      authorId: this.client.user?.id ?? 'samara',
+      authorName: name,
+      content,
+      isSamara: true,
+    });
   }
 
   /**

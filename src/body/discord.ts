@@ -70,7 +70,11 @@ export class DiscordBody {
     if (!explicitlyDirect) {
       const decision = await this.mind.decideTurn(perception);
       if (!decision.respond) {
-        this.mind.observe(perception); // deja pasar el turno, pero recuerda el contexto
+        this.mind.observe(perception); // contexto inmediato (memoria de trabajo)
+        // Aunque no conteste, recuerda lo que se dijo (estuvo presente leyendo).
+        void this.mind
+          .remember(perception)
+          .catch((err) => console.error('Error guardando recuerdo:', err));
         this.armIdle(msg); // por si la conversación se queda muerta
         return;
       }

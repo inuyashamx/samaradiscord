@@ -255,17 +255,7 @@ Responde SOLO con JSON, sin texto extra:
     });
 
     // Guarda el mensaje de la persona en memoria de largo plazo.
-    if (p.content.trim().length >= MIN_MEMORABLE_LENGTH) {
-      this.memory.remember(
-        {
-          channelId: p.channelId,
-          authorId: p.authorId,
-          authorName: p.authorName,
-          content: p.content,
-        },
-        embedding
-      );
-    }
+    this.storeIfMemorable(p, embedding);
 
     // Apreciación en segundo plano: cómo la hizo sentir y qué siente por esa
     // persona. No bloquea la respuesta (afecta a los siguientes mensajes).
@@ -278,6 +268,31 @@ Responde SOLO con JSON, sin texto extra:
     void this.maybeReflect();
 
     return reply;
+  }
+
+  /**
+   * Recuerda a largo plazo algo que Samara PRESENCIÓ pero no necesariamente
+   * contestó. Una persona que está en el chat se queda con lo que se dice a su
+   * alrededor, aunque no responda. Embebe y guarda si tiene sustancia.
+   */
+  async remember(p: Perception): Promise<void> {
+    if (p.content.trim().length < MIN_MEMORABLE_LENGTH) return;
+    const embedding = await this.llm.embed(p.content);
+    this.storeIfMemorable(p, embedding);
+  }
+
+  /** Guarda una percepción en memoria de largo plazo si tiene sustancia. */
+  private storeIfMemorable(p: Perception, embedding: number[]): void {
+    if (p.content.trim().length < MIN_MEMORABLE_LENGTH) return;
+    this.memory.remember(
+      {
+        channelId: p.channelId,
+        authorId: p.authorId,
+        authorName: p.authorName,
+        content: p.content,
+      },
+      embedding
+    );
   }
 
   /**

@@ -56,6 +56,7 @@ export class DiscordBody {
       authorId: msg.author.id,
       authorName: msg.member?.displayName ?? msg.author.username,
       content: msg.content,
+      isDev: config.discord.devUserId != null && msg.author.id === config.discord.devUserId,
     };
 
     // Historial crudo: registra TODO lo que se dice (sustrato completo).

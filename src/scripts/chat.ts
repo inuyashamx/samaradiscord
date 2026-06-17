@@ -6,6 +6,7 @@ import { MemoryStore } from '../mind/memory.js';
 import { Relationships } from '../mind/relationships.js';
 import { EmotionState } from '../mind/emotion.js';
 import { ShortTermMemory } from '../mind/short-term-memory.js';
+import { ChatHistory } from '../mind/history.js';
 import { Mind } from '../mind/mind.js';
 
 /**
@@ -23,7 +24,8 @@ async function main(): Promise<void> {
   const relationships = new Relationships(db);
   const emotion = new EmotionState(db);
   const stm = new ShortTermMemory(db);
-  const mind = new Mind(llm, memory, relationships, emotion, stm, 'discord');
+  const history = new ChatHistory(db);
+  const mind = new Mind(llm, memory, relationships, emotion, stm, history, 'discord');
 
   const channelId = 'terminal'; // canal ficticio para el chat local
   const authorName = process.env.USER || process.env.USERNAME || 'Tú';
@@ -45,12 +47,14 @@ async function main(): Promise<void> {
       continue;
     }
 
+    history.log(channelId, { authorId: 'local-user', authorName, content: text });
     const reply = await mind.respondTo({
       channelId,
       authorId: 'local-user',
       authorName,
       content: text,
     });
+    history.log(channelId, { authorId: 'samara', authorName: 'Samara', content: reply, isSamara: true });
     console.log(`Samara: ${reply}\n`);
   }
 

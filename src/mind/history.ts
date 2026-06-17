@@ -54,6 +54,35 @@ export class ChatHistory {
       );
   }
 
+  /**
+   * Busca en el historial del canal por palabras clave (lo usa Samara como
+   * herramienta cuando no está segura de algo que se dijo antes).
+   */
+  search(channelId: string, query: string, limit = 8): HistoryEntry[] {
+    const terms = query
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.replace(/[%_]/g, ''))
+      .filter((t) => t.length > 2)
+      .slice(0, 6);
+    if (terms.length === 0) return [];
+
+    const where = terms.map(() => 'content LIKE ?').join(' OR ');
+    const args = terms.map((t) => `%${t}%`);
+    const rows = this.db
+      .prepare(
+        `SELECT author_id AS authorId, author_name AS authorName, content,
+                is_samara AS isSamara, created_at AS createdAt
+         FROM messages
+         WHERE channel_id = ? AND (${where})
+         ORDER BY id DESC LIMIT ?`
+      )
+      .all(channelId, ...args, limit) as Array<
+      Omit<HistoryEntry, 'isSamara'> & { isSamara: number }
+    >;
+    return rows.reverse().map((r) => ({ ...r, isSamara: Boolean(r.isSamara) }));
+  }
+
   /** Los últimos mensajes de un canal, en orden cronológico. */
   recent(channelId: string, limit = 50): HistoryEntry[] {
     const rows = this.db

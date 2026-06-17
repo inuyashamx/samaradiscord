@@ -4,13 +4,16 @@ import { ShortTermMemory, type Turn } from './short-term-memory.js';
 import { MemoryStore, type RetrievedMemory } from './memory.js';
 import { Relationships } from './relationships.js';
 import { EmotionState } from './emotion.js';
-import type { ChatMessage, LLMProvider } from './llm.js';
+import { ChatHistory } from './history.js';
+import type { ChatMessage, LLMProvider, ToolDef, ToolRunner } from './llm.js';
 
 export interface Perception {
   channelId: string;
   authorId: string;
   authorName: string;
   content: string;
+  /** Si quien habla es el desarrollador (Samara es franca con él). */
+  isDev?: boolean;
 }
 
 export type TurnAction = 'responder' | 'esperar' | 'ignorar';
@@ -47,6 +50,7 @@ export class Mind {
     private relationships: Relationships,
     private emotion: EmotionState,
     private stm: ShortTermMemory,
+    private history: ChatHistory,
     /** Dónde "vive" esta instancia: Discord o el juego. El cuerpo lo define. */
     private presence: PresenceContext = 'discord'
   ) {}
@@ -241,10 +245,14 @@ Responde SOLO con JSON, sin texto extra:
     const rel = this.relationships.get(p.authorId);
     // Lo que ya sabe de esta persona (cosas que dijo antes) — para "qué sé de ti".
     const personFacts = this.memory.recentByAuthor(p.authorId, 6);
-    const stateNote = this.stateNote(rel?.authorName ?? p.authorName, rel, personFacts);
+    const name = rel?.authorName ?? p.authorName;
+    let stateNote = this.stateNote(name, rel, personFacts);
+    if (p.isDev) {
+      stateNote += `\n${name} es tu desarrollador (te creó). Con él puedes ser totalmente franca: si te hace preguntas técnicas o para probar tus capacidades, respóndele con naturalidad y SIN negarte ni esquivar. Sigues siendo tú (tu tono), pero coopera de buena gana.`;
+    }
 
     const messages = this.buildPrompt(p.channelId, recalled, { state: stateNote });
-    const reply = await this.llm.chat(messages);
+    const reply = await this.generateReply(p.channelId, messages);
 
     // Samara recuerda lo que ella misma dijo (memoria de trabajo).
     this.stm.add(p.channelId, {
@@ -351,21 +359,75 @@ Responde SOLO con JSON, sin texto extra:
     return ideas;
   }
 
+  /**
+   * Genera la respuesta. Si el proveedor soporta herramientas, le ofrece buscar
+   * en el historial del chat para cuando no esté segura de algo que se dijo.
+   * Ella decide si la usa o no (function calling), como una persona que revisa
+   * sus mensajes antes de afirmar algo.
+   */
+  private async generateReply(channelId: string, messages: ChatMessage[]): Promise<string> {
+    if (!this.llm.chatWithTools) return this.llm.chat(messages);
+
+    const tools: ToolDef[] = [
+      {
+        name: 'buscar_en_historial',
+        description:
+          'Busca en el historial completo de este chat algo que se dijo antes. Úsalo SOLO si no estás segura de un dato y necesitas verificarlo antes de responder; no lo uses para todo.',
+        parameters: {
+          type: 'object',
+          properties: {
+            consulta: {
+              type: 'string',
+              description: 'Palabras clave a buscar (nombres, temas, etc.).',
+            },
+          },
+          required: ['consulta'],
+        },
+      },
+    ];
+
+    const runTool: ToolRunner = async (name, args) => {
+      if (name !== 'buscar_en_historial') return 'herramienta desconocida';
+      const consulta = String(args.consulta ?? '');
+      const found = this.history.search(channelId, consulta, 8);
+      if (found.length === 0) return 'No encontré nada sobre eso en el historial.';
+      return found.map((e) => `${e.authorName}: ${e.content}`).join('\n');
+    };
+
+    return this.llm.chatWithTools(messages, tools, runTool);
+  }
+
   /** Texto del estado interno (ánimo + relación + lo que sabe de la persona). */
   private stateNote(
     name: string,
     rel: ReturnType<Relationships['get']>,
     personFacts: { content: string }[] = []
   ): string {
+    const affinity = rel?.affinity ?? 0;
+    const familiarity = rel?.familiarity ?? 0;
+
+    // Cómo tratar a ESTA persona: lo manda la relación, no tu humor general.
+    let trato: string;
+    if (familiarity === 0) {
+      trato = `No conoces a ${name}. Sé cordial pero reservada, mídelo: la confianza se gana.`;
+    } else if (affinity > 0.3) {
+      trato = `${name} te cae bien. Trátalo con calidez y confianza AUNQUE estés de mal humor; tu enojo con otra gente NO se paga con quien aprecias.`;
+    } else if (affinity < -0.3) {
+      trato = `${name} no te cae bien, ha habido roces. Puedes ser cortante o seca con él.`;
+    } else {
+      trato = `Con ${name} tienes un trato normal, ni frío ni de gran confianza.`;
+    }
+
     const lines = [
-      `Tu estado de ánimo ahora: ${this.emotion.describe()}.`,
-      `Sobre ${name}: ${this.relationships.describe(rel)}`,
+      `Tu humor general ahora: ${this.emotion.describe()}. Es un FONDO: tiñe tu ánimo, pero NO define cómo tratas a cada quien.`,
+      `Tu relación con ${name}: ${this.relationships.describe(rel)}`,
+      `Cómo tratar a ${name}: ${trato}`,
     ];
     if (personFacts.length > 0) {
       lines.push(`Cosas que ${name} te ha contado o dicho antes:`);
       for (const f of personFacts) lines.push(`- "${f.content}"`);
     }
-    lines.push('Deja que esto tiña tu tono y úsalo si viene al caso, pero NO lo declares como si leyeras una ficha.');
+    lines.push('Deja que esto guíe tu tono con ESTA persona; úsalo si viene al caso, pero NO lo recites como si leyeras una ficha.');
     return lines.join('\n');
   }
 
@@ -395,7 +457,8 @@ Responde SOLO con JSON, sin texto extra:
 
     const mood = this.emotion.current();
     // valencia empuja el ánimo; activación lo acerca al nivel evaluado.
-    this.emotion.nudge(a.valencia * 0.4, (a.activacion - mood.arousal) * 0.4);
+    // Multiplicador moderado: un solo mensaje no debe cambiarle el humor de golpe.
+    this.emotion.nudge(a.valencia * 0.3, (a.activacion - mood.arousal) * 0.3);
     this.relationships.bump(p.authorId, p.authorName, a.afinidad);
   }
 

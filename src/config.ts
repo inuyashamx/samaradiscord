@@ -21,6 +21,9 @@ export const config = {
       return required('DISCORD_APP_ID');
     },
     guildId: process.env.DISCORD_GUILD_ID || undefined,
+    // ID de Discord del desarrollador. Con él Samara es totalmente franca,
+    // incluso en preguntas técnicas o sobre sus capacidades.
+    devUserId: process.env.DEV_USER_ID || undefined,
   },
   openai: {
     get apiKey() {
@@ -32,7 +35,7 @@ export const config = {
     embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
   },
   behavior: {
-    shortTermWindow: Number(process.env.SHORT_TERM_WINDOW ?? 20),
+    shortTermWindow: Number(process.env.SHORT_TERM_WINDOW ?? 40),
     // Cuántos mensajes de otros deben pasar tras hablar ella para que vuelva a
     // meterse sola SIN que le hablen directo (evita monopolizar en grupo).
     // No aplica cuando el mensaje va dirigido a ella: ahí siempre contesta.

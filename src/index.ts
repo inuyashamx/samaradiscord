@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   console.log(
     `🧠 Memoria: ${memory.count()} recuerdos · 📜 Historial: ${history.count()} mensajes`
   );
-  const mind = new Mind(llm, memory, relationships, emotion, stm, 'discord');
+  const mind = new Mind(llm, memory, relationships, emotion, stm, history, 'discord');
   const body = new DiscordBody(mind, history);
 
   await body.start();

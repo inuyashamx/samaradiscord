@@ -21,9 +21,10 @@ export const config = {
       return required('DISCORD_APP_ID');
     },
     guildId: process.env.DISCORD_GUILD_ID || undefined,
-    // ID de Discord del desarrollador. Con él Samara es totalmente franca,
-    // incluso en preguntas técnicas o sobre sus capacidades.
+    // Desarrollador: con él Samara es franca (incluso en lo técnico).
+    // Por ID numérico (lo más fiable) o por nombre/usuario (más cómodo).
     devUserId: process.env.DEV_USER_ID || undefined,
+    devUserName: process.env.DEV_USER_NAME || undefined,
   },
   openai: {
     get apiKey() {

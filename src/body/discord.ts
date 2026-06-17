@@ -51,12 +51,13 @@ export class DiscordBody {
     // se rearmará, así el temporizador solo dispara cuando el canal queda quieto.
     this.cancelIdle(msg.channelId);
 
+    const authorName = msg.member?.displayName ?? msg.author.username;
     const perception: Perception = {
       channelId: msg.channelId,
       authorId: msg.author.id,
-      authorName: msg.member?.displayName ?? msg.author.username,
+      authorName,
       content: msg.content,
-      isDev: config.discord.devUserId != null && msg.author.id === config.discord.devUserId,
+      isDev: this.isDev(msg.author.id, authorName, msg.author.username),
     };
 
     // Historial crudo: registra TODO lo que se dice (sustrato completo).
@@ -136,6 +137,17 @@ export class DiscordBody {
     } catch (err) {
       console.error('Error en mensaje proactivo:', err);
     }
+  }
+
+  /** ¿Quien habla es el desarrollador? Por ID numérico o por nombre/usuario. */
+  private isDev(authorId: string, displayName: string, username: string): boolean {
+    const { devUserId, devUserName } = config.discord;
+    if (devUserId && authorId === devUserId) return true;
+    if (devUserName) {
+      const want = devUserName.toLowerCase();
+      if (displayName.toLowerCase() === want || username.toLowerCase() === want) return true;
+    }
+    return false;
   }
 
   /** Registra en el historial un mensaje propio de Samara. */

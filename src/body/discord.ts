@@ -100,6 +100,15 @@ export class DiscordBody {
     // se rearmará, así el temporizador solo dispara cuando el canal queda quieto.
     this.cancelIdle(msg.channelId);
 
+    // ¿A quién responde este mensaje? (función "responder" de Discord)
+    const botId = this.client.user?.id;
+    const repliedUser = msg.mentions.repliedUser ?? undefined;
+    const replyingToHer = repliedUser != null && repliedUser.id === botId;
+    const replyToOther =
+      repliedUser != null && !replyingToHer
+        ? msg.mentions.members?.get(repliedUser.id)?.displayName ?? repliedUser.username
+        : undefined;
+
     const authorName = msg.member?.displayName ?? msg.author.username;
     const perception: Perception = {
       channelId: msg.channelId,
@@ -107,6 +116,7 @@ export class DiscordBody {
       authorName,
       content: resolveMentions(msg), // <@id> -> @Nombre (si no, el modelo se confunde)
       isDev: this.isDev(msg.author.id, authorName, msg.author.username),
+      replyTo: replyToOther, // si le responde a otra persona, no a Samara
     };
 
     // Historial crudo: registra TODO lo que se dice (sustrato completo).
@@ -116,9 +126,6 @@ export class DiscordBody {
     // En ese caso debe contestar rápido, como en una conversación normal.
     const mentioned =
       this.client.user != null && msg.mentions.has(this.client.user);
-    const replyingToHer =
-      this.client.user != null &&
-      msg.mentions.repliedUser?.id === this.client.user.id;
     const explicitlyDirect = mentioned || replyingToHer;
 
     // Si la etiquetan o responden a un mensaje suyo, es directo y seguro.

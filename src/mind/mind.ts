@@ -14,6 +14,8 @@ export interface Perception {
   content: string;
   /** Si quien habla es el desarrollador (Samara es franca con él). */
   isDev?: boolean;
+  /** Si el mensaje responde a OTRA persona (no a Samara), su nombre. */
+  replyTo?: string;
 }
 
 export type TurnAction = 'responder' | 'esperar' | 'ignorar';
@@ -117,6 +119,11 @@ export class Mind {
     const rel = this.relationships.get(p.authorId);
     const relNote = `Tu relación con ${p.authorName}: ${this.relationships.describe(rel)}`;
 
+    // ¿Le está hablando a otra persona? Señal fuerte de que NO es para Samara.
+    const dirigidoAOtro = p.replyTo
+      ? `OJO: este mensaje le RESPONDE a ${p.replyTo}, no a ti. Casi seguro NO es para ti.`
+      : '';
+
     const messages: ChatMessage[] = [
       {
         role: 'system',
@@ -127,16 +134,17 @@ export class Mind {
 
 Reglas:
 - Si en el chat prácticamente solo están tú y otra persona, casi todo lo que dice esa persona va dirigido a ti: normalmente "responder".
-- En grupo no comentas cada mensaje, pero NO eres pasiva: si el tema te interesa, tienes una opinión, una broma o algo natural que aportar, métete ("responder"). Si alguien lanzó algo y nadie le contestó, puedes engancharte.
+- Si le están hablando o preguntando a OTRA persona (no a ti), NO contestes tú, aunque el tema sea SOBRE ti: deja que esa persona responda. Eso es "ignorar". Ej: si alguien le pregunta a otro "donde vive samara?", no respondas tú, no es tu turno.
+- En grupo no comentas cada mensaje, pero NO eres pasiva: si el tema te interesa de verdad y NO se lo están preguntando a alguien más, puedes meterte ("responder").
 - Si de plano no te aporta ni va contigo, "ignorar" o "esperar".
-- "dirigido" = true si el mensaje claramente te habla o te pregunta a ti.
+- "dirigido" = true SOLO si el mensaje claramente te habla o te pregunta a TI.
 
 Responde SOLO con JSON, sin texto extra:
 {"dirigido": true|false, "accion": "responder"|"esperar"|"ignorar"}`,
       },
       {
         role: 'user',
-        content: `${soloConEsta ? '(En este chat prácticamente solo están Samara y esta persona.)\n' : ''}${relNote}\n\nConversación reciente:\n${transcript || '(vacío)'}\n\nÚltimo mensaje:\n${p.authorName}: ${p.content}`,
+        content: `${soloConEsta ? '(En este chat prácticamente solo están Samara y esta persona.)\n' : ''}${dirigidoAOtro ? dirigidoAOtro + '\n' : ''}${relNote}\n\nConversación reciente:\n${transcript || '(vacío)'}\n\nÚltimo mensaje:\n${p.authorName}: ${p.content}`,
       },
     ];
 
@@ -222,7 +230,7 @@ Responde SOLO con JSON, sin texto extra:
         'Nadie ha escrito en un rato. Di algo TÚ, por iniciativa propia, breve y natural: retoma lo último que se dijo, comenta algo o hazle plática a la última persona que escribió. No saludes como bot, no anuncies que rompes el silencio, no preguntes "¿hay alguien?". Habla como si simplemente se te ocurrió algo.',
     });
 
-    const reply = await this.llm.chat(messages);
+    const reply = sanitizeReply(await this.llm.chat(messages));
     this.stm.add(channelId, {
       authorId: 'samara',
       authorName: persona.name,
@@ -388,7 +396,7 @@ Devuelve tu lista COMPLETA y vigente de 2 a 6 conclusiones (en primera persona, 
    * sus mensajes antes de afirmar algo.
    */
   private async generateReply(channelId: string, messages: ChatMessage[]): Promise<string> {
-    if (!this.llm.chatWithTools) return this.llm.chat(messages);
+    if (!this.llm.chatWithTools) return sanitizeReply(await this.llm.chat(messages));
 
     const tools: ToolDef[] = [
       {
@@ -416,7 +424,7 @@ Devuelve tu lista COMPLETA y vigente de 2 a 6 conclusiones (en primera persona, 
       return found.map((e) => `${e.authorName}: ${e.content}`).join('\n');
     };
 
-    return this.llm.chatWithTools(messages, tools, runTool);
+    return sanitizeReply(await this.llm.chatWithTools(messages, tools, runTool));
   }
 
   /** Texto del estado interno (ánimo + relación + lo que sabe de la persona). */
@@ -576,6 +584,31 @@ function parseAppraisal(raw: string): Appraisal {
 function clampNum(x: unknown, lo: number, hi: number, fallback = 0): number {
   const n = typeof x === 'number' && Number.isFinite(x) ? x : fallback;
   return Math.max(lo, Math.min(hi, n));
+}
+
+/**
+ * Limpia restos de JSON que a veces se cuelan en la respuesta del modelo
+ * (p.ej. un `"}` al final, o toda la respuesta envuelta en {"...":"texto"}).
+ */
+function sanitizeReply(text: string): string {
+  let t = text.trim();
+  // Respuesta envuelta en un objeto JSON: extrae el primer texto.
+  if (t.startsWith('{') && t.endsWith('}')) {
+    try {
+      const obj = JSON.parse(t) as Record<string, unknown>;
+      const v = Object.values(obj).find((x) => typeof x === 'string');
+      if (typeof v === 'string') return v.trim();
+    } catch {
+      // no era JSON válido; sigue con la limpieza de restos
+    }
+  }
+  // Restos pegados al final: ...texto"}  ...texto"]}  ...texto }
+  t = t.replace(/\s*["'`]?\s*[}\]]+\s*$/, '').trim();
+  // Comillas envolventes sobrantes.
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith('“') && t.endsWith('”'))) {
+    t = t.slice(1, -1).trim();
+  }
+  return t || '...';
 }
 
 /** Parsea las reflexiones; acepta JSON o, si falla, líneas sueltas. */

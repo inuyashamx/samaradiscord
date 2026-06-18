@@ -7,6 +7,8 @@ export interface Relationship {
   affinity: number;
   /** Cuántas veces han interactuado (cuánto la conoce). */
   familiarity: number;
+  /** Cuándo fue la última interacción (ms epoch). */
+  updatedAt?: number;
 }
 
 /**
@@ -33,7 +35,8 @@ export class Relationships {
   all(): Relationship[] {
     return this.db
       .prepare(
-        `SELECT author_id AS authorId, author_name AS authorName, affinity, familiarity
+        `SELECT author_id AS authorId, author_name AS authorName, affinity, familiarity,
+                updated_at AS updatedAt
          FROM relationships ORDER BY familiarity DESC, affinity DESC`
       )
       .all() as Relationship[];
@@ -42,8 +45,8 @@ export class Relationships {
   get(authorId: string): Relationship | null {
     const row = this.db
       .prepare(
-        `SELECT author_id AS authorId, author_name AS authorName,
-                affinity, familiarity FROM relationships WHERE author_id = ?`
+        `SELECT author_id AS authorId, author_name AS authorName, affinity, familiarity,
+                updated_at AS updatedAt FROM relationships WHERE author_id = ?`
       )
       .get(authorId) as Relationship | undefined;
     return row ?? null;

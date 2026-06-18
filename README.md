@@ -248,7 +248,10 @@ Docker reinicia el bot solo si se cae o si reinicia la máquina.
 - [x] **Fase 2** — Estado de ánimo + relaciones por persona
 - [x] **Fase 3** — Reflexión → opiniones propias emergentes
 - [x] Consciencia de contexto (comunidad en Discord / lore en el juego)
-- [~] **Fase 4** — Proactividad avanzada. Hecho: ánimo del día/hora. Pendiente: sentido del tiempo, iniciativa más rica
+- [~] **Fase 4** — Proactividad avanzada. Hecho: ánimo del día/hora, **sentido del
+      tiempo** (momento del día, silencio del chat, ausencias), **deseos y metas**
+      (deseos fijos de su canon + metas que forma/revisa al reflexionar). Pendiente:
+      iniciativa más rica (retomar temas pendientes por su cuenta)
 - [ ] **Fase 5** — Abstracción del núcleo para un mundo 3D (NPCs con IA)
 
 ---

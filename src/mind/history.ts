@@ -83,6 +83,14 @@ export class ChatHistory {
     return rows.reverse().map((r) => ({ ...r, isSamara: Boolean(r.isSamara) }));
   }
 
+  /** Marcas de tiempo de los últimos mensajes de un canal (más nuevo primero). */
+  lastMessageTimes(channelId: string, limit = 2): number[] {
+    const rows = this.db
+      .prepare(`SELECT created_at AS t FROM messages WHERE channel_id = ? ORDER BY id DESC LIMIT ?`)
+      .all(channelId, limit) as Array<{ t: number }>;
+    return rows.map((r) => r.t);
+  }
+
   /** Los últimos mensajes de un canal, en orden cronológico. */
   recent(channelId: string, limit = 50): HistoryEntry[] {
     const rows = this.db

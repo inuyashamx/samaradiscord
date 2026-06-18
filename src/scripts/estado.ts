@@ -3,6 +3,8 @@ import { MemoryStore } from '../mind/memory.js';
 import { Relationships } from '../mind/relationships.js';
 import { EmotionState } from '../mind/emotion.js';
 import { ChatHistory } from '../mind/history.js';
+import { Goals } from '../mind/goals.js';
+import { persona } from '../mind/persona.js';
 
 /**
  * Muestra el estado interno de Samara: ánimo, relaciones, opiniones y recuerdos.
@@ -27,6 +29,7 @@ function main(): void {
   const relationships = new Relationships(db);
   const emotion = new EmotionState(db);
   const history = new ChatHistory(db);
+  const goals = new Goals(db);
 
   console.log('\n═══════════════  ESTADO DE SAMARA  ═══════════════\n');
 
@@ -50,6 +53,16 @@ function main(): void {
     }
     console.log('');
   }
+
+  // Deseos (fijos) y metas (dinámicas)
+  console.log('🎯  LO QUE LA MUEVE');
+  console.log('   deseos (fijos):');
+  for (const d of persona.desires) console.log(`     · ${d}`);
+  const metas = goals.get();
+  console.log(`   metas ahora (${metas.length}):`);
+  if (metas.length === 0) console.log('     (aún no se ha propuesto nada concreto)');
+  else for (const g of metas) console.log(`     › ${g}`);
+  console.log('');
 
   // Opiniones propias (reflexiones)
   const reflections = memory.recentMemories(15, 'reflection');

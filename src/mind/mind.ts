@@ -250,10 +250,19 @@ Responde SOLO con JSON, sin texto extra:
   async respondTo(p: Perception): Promise<string> {
     this.observe(p);
 
-    // Embebemos el mensaje una sola vez: sirve para recuperar recuerdos
-    // relevantes Y para guardar este momento como recuerdo nuevo.
-    const embedding = await this.llm.embed(p.content);
-    const recalled = safeRecall(this.memory, embedding, RECALL_K);
+    // Para recuperar, embebemos el CONTEXTO reciente (no solo el último mensaje):
+    // así, si dice algo vago, la búsqueda se guía por el tema de la conversación.
+    // Para guardar, embebemos el mensaje en sí.
+    const contextText = this.stm
+      .recent(p.channelId)
+      .slice(-4)
+      .map((t) => t.content)
+      .join(' ');
+    const [contextEmbedding, embedding] = await Promise.all([
+      this.llm.embed(contextText || p.content),
+      this.llm.embed(p.content),
+    ]);
+    const recalled = safeRecall(this.memory, contextEmbedding, RECALL_K);
 
     // Su tono refleja su ánimo actual y cómo se lleva con esta persona.
     const rel = this.relationships.get(p.authorId);

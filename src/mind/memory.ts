@@ -232,4 +232,18 @@ export class MemoryStore {
     };
     return row.n;
   }
+
+  /** Cuántos recuerdos hay de cada tipo. */
+  countByKind(): { episodic: number; reflection: number; experience: number } {
+    const rows = this.db
+      .prepare('SELECT kind, COUNT(*) AS n FROM memories GROUP BY kind')
+      .all() as Array<{ kind: string; n: number }>;
+    const out = { episodic: 0, reflection: 0, experience: 0 };
+    for (const r of rows) {
+      if (r.kind === 'episodic' || r.kind === 'reflection' || r.kind === 'experience') {
+        out[r.kind] = r.n;
+      }
+    }
+    return out;
+  }
 }

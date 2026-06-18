@@ -23,6 +23,16 @@ function affinityLabel(a: number): string {
   return 'normal';
 }
 
+function ago(ts?: number): string {
+  if (!ts) return '';
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 1) return 'ahora';
+  if (min < 60) return `hace ${min}min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h}h`;
+  return `hace ${Math.round(h / 24)}d`;
+}
+
 function main(): void {
   const db = openDb();
   const memory = new MemoryStore(db);
@@ -30,8 +40,18 @@ function main(): void {
   const emotion = new EmotionState(db);
   const history = new ChatHistory(db);
   const goals = new Goals(db);
+  goals.ensureSeeded(persona.desires); // por si se consulta antes de arrancar el bot
 
   console.log('\n═══════════════  ESTADO DE SAMARA  ═══════════════\n');
+
+  // Resumen de un vistazo
+  const k = memory.countByKind();
+  const people = relationships.all();
+  console.log('📊  RESUMEN');
+  console.log(
+    `   ${k.episodic} recuerdos · ${k.experience} experiencias · ${k.reflection} opiniones · ` +
+      `${goals.get().length} metas · ${people.length} relaciones · ${history.count()} en historial\n`
+  );
 
   // Ánimo
   const mood = emotion.current();
@@ -41,21 +61,19 @@ function main(): void {
   console.log(`   energía   ${bar(mood.arousal, 0, 1)}  ${mood.arousal.toFixed(2)}\n`);
 
   // Relaciones
-  const people = relationships.all();
   console.log(`👥  RELACIONES (${people.length})`);
   if (people.length === 0) {
     console.log('   (todavía no conoce a nadie)\n');
   } else {
     for (const p of people) {
       const fam = `${p.familiarity} interacc.`.padEnd(14);
-      const af = `afinidad ${p.affinity.toFixed(2)} (${affinityLabel(p.affinity)})`;
-      console.log(`   ${p.authorName.padEnd(16)} ${fam} ${af}`);
+      const af = `afinidad ${p.affinity.toFixed(2)} (${affinityLabel(p.affinity)})`.padEnd(28);
+      console.log(`   ${p.authorName.padEnd(16)} ${fam} ${af} visto ${ago(p.updatedAt)}`);
     }
     console.log('');
   }
 
-  // Deseos (fijos) y metas (dinámicas)
-  goals.ensureSeeded(persona.desires); // por si se consulta antes de arrancar el bot
+  // Deseos, metas, ajustes
   console.log('🎯  LO QUE LA MUEVE');
   const deseos = goals.getDesires();
   console.log(`   deseos (suyos, los evoluciona ella) (${deseos.length}):`);
@@ -91,7 +109,7 @@ function main(): void {
 
   // Recuerdos recientes
   const recents = memory.recentMemories(12, 'episodic');
-  console.log(`🧠  RECUERDOS RECIENTES (de ${memory.count()} en total)`);
+  console.log(`🧠  RECUERDOS RECIENTES (${k.episodic} episódicos en total)`);
   if (recents.length === 0) {
     console.log('   (sin recuerdos todavía)\n');
   } else {

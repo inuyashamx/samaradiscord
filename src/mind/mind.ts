@@ -6,6 +6,7 @@ import { Relationships } from './relationships.js';
 import { EmotionState } from './emotion.js';
 import { ChatHistory } from './history.js';
 import { Goals } from './goals.js';
+import { debugLog } from './debug.js';
 import type { ChatMessage, LLMProvider, ToolDef, ToolRunner } from './llm.js';
 
 export interface Perception {
@@ -162,6 +163,11 @@ export class Mind {
       authorId: p.authorId,
       channelId: p.channelId,
     });
+    debugLog('recall', {
+      para: p.authorName,
+      canal: p.channelId,
+      items: recalled.map((m) => `[${m.kind}] ${m.authorName}: ${m.content.slice(0, 70)}`),
+    });
 
     // Su tono refleja su ánimo actual y cómo se lleva con esta persona.
     const rel = this.relationships.get(p.authorId);
@@ -193,10 +199,12 @@ export class Mind {
     // Si decidió quedarse callada: igual recuerda lo que presenció (la vio
     // pasar, como una persona que lee), pero no responde ni la "aprecia".
     if (reply === null) {
+      debugLog('silencio', { ante: p.authorName, mensaje: p.content.slice(0, 80) });
       this.relationships.bump(p.authorId, p.authorName, 0);
       this.storeIfMemorable(p, embedding);
       return null;
     }
+    debugLog('responde', { a: p.authorName, texto: reply });
 
     // Samara recuerda lo que ella misma dijo (memoria de trabajo).
     this.stm.add(p.channelId, {
@@ -270,9 +278,18 @@ export class Mind {
     try {
       const ideas = await this.reflect();
       if (ideas.length) console.log(`💭 Samara reflexionó (${ideas.length} ideas).`);
+      debugLog('reflexion', {
+        opiniones: ideas,
+        metas: this.goals.get(),
+        deseos: this.goals.getDesires(),
+        ajustes: this.goals.getLessons(),
+      });
       // Al "dormir", olvida lo viejo y trivial (lo importante ya es reflexión).
       const forgotten = this.memory.forgetOldEpisodic(config.behavior.memoryKeepEpisodic);
-      if (forgotten) console.log(`🗑️  Samara olvidó ${forgotten} recuerdos viejos.`);
+      if (forgotten) {
+        console.log(`🗑️  Samara olvidó ${forgotten} recuerdos viejos.`);
+        debugLog('olvido', { cuantos: forgotten });
+      }
     } catch (err) {
       console.error('Error en reflexión:', err);
     } finally {
@@ -514,7 +531,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     }
 
     let silent = false;
-    const runTool: ToolRunner = async (name, args) => {
+    const runToolRaw: ToolRunner = async (name, args) => {
       switch (name) {
         case 'buscar_en_historial': {
           const found = this.history.search(channelId, String(args.consulta ?? ''), 8);
@@ -560,6 +577,12 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         default:
           return 'herramienta desconocida';
       }
+    };
+    // Envoltorio: registra cada uso de herramienta para el debug.
+    const runTool: ToolRunner = async (name, args) => {
+      const result = await runToolRaw(name, args);
+      debugLog('tool', { name, args, result: String(result).slice(0, 120) });
+      return result;
     };
 
     const out = sanitizeReply(await this.llm.chatWithTools(messages, tools, runTool));
@@ -670,6 +693,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     // Multiplicador moderado: un solo mensaje no debe cambiarle el humor de golpe.
     this.emotion.nudge(a.valencia * 0.3, (a.activacion - mood.arousal) * 0.3);
     this.relationships.bump(p.authorId, p.authorName, a.afinidad);
+    debugLog('apreciacion', { quien: p.authorName, ...a, afinidadAhora: this.relationships.get(p.authorId)?.affinity });
   }
 
   private buildPrompt(

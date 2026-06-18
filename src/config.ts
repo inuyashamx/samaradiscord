@@ -35,6 +35,8 @@ export const config = {
     decisionModel: process.env.OPENAI_DECISION_MODEL || 'gpt-4o-mini',
     embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
   },
+  // Log de depuración de acciones internas en data/debug.jsonl (para auditar).
+  debug: (process.env.DEBUG_LOG ?? 'false').toLowerCase() === 'true',
   behavior: {
     shortTermWindow: Number(process.env.SHORT_TERM_WINDOW ?? 40),
     // Cuántos mensajes de otros deben pasar tras hablar ella para que vuelva a

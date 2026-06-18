@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts",
     "chat": "tsx src/scripts/chat.ts",
     "estado": "tsx src/scripts/estado.ts",
+    "debug": "tsx src/scripts/debug.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },

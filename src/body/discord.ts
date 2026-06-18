@@ -6,6 +6,7 @@ import {
   type Message,
 } from 'discord.js';
 import { config } from '../config.js';
+import { debugLog } from '../mind/debug.js';
 import type { Mind, Perception } from '../mind/mind.js';
 import type { ChatHistory } from '../mind/history.js';
 
@@ -121,6 +122,13 @@ export class DiscordBody {
 
     // Historial crudo: registra TODO lo que se dice (sustrato completo).
     this.history.log(perception.channelId, { ...perception, isSamara: false });
+    debugLog('mensaje', {
+      de: perception.authorName,
+      canal: perception.channelId,
+      dev: perception.isDev,
+      respondeA: perception.replyTo,
+      texto: perception.content,
+    });
 
     // "Directo" = hablándole a ella: la etiquetan o responden a un mensaje suyo.
     // En ese caso debe contestar rápido, como en una conversación normal.
@@ -184,6 +192,7 @@ export class DiscordBody {
       if ('sendTyping' in msg.channel) await msg.channel.sendTyping();
       await new Promise((r) => setTimeout(r, Math.min(text.length * 30, 3500)));
       const clean = styleOutput(text);
+      debugLog('proactivo', { canal: msg.channelId, texto: clean });
       if ('send' in msg.channel) await msg.channel.send(clean);
       this.logSamara(msg.channelId, clean);
     } catch (err) {

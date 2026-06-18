@@ -330,12 +330,16 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
 
     // Reemplaza el set viejo por el revisado (sus opiniones quedan al día).
     this.memory.deleteReflections();
+    const people = this.relationships.all();
     for (const idea of ideas) {
       const embedding = await this.llm.embed(idea);
+      // Si la opinión es sobre UNA persona concreta, la etiquetamos con ella:
+      // así se prioriza al hablar con esa persona y no se arrastra a otras.
+      const subject = subjectOf(idea, people);
       this.memory.remember(
         {
           channelId: 'global',
-          authorId: 'samara',
+          authorId: subject ?? 'samara',
           authorName: persona.name,
           content: idea,
           kind: 'reflection',
@@ -737,6 +741,24 @@ function parseReflectionUpdate(raw: string): {
     // cae al fallback
   }
   return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [] };
+}
+
+/**
+ * Si una opinión menciona a UNA sola persona conocida, devuelve su authorId
+ * (para etiquetar la reflexión con su "sujeto"). Si menciona a varias o a
+ * nadie, devuelve undefined (queda como opinión general).
+ */
+function subjectOf(idea: string, people: Array<{ authorId: string; authorName: string }>): string | undefined {
+  const text = idea.toLowerCase();
+  const hits = people.filter((p) => {
+    const name = p.authorName.trim().toLowerCase();
+    return name.length >= 3 && new RegExp(`\\b${escapeRegex(name)}\\b`).test(text);
+  });
+  return hits.length === 1 ? hits[0].authorId : undefined;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function stringArray(x: unknown): string[] {

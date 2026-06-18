@@ -1,16 +1,17 @@
 import { openDb, type DB } from './db.js';
 
 const MAX_GOALS = 5;
-const MAX_DESIRES = 5;
+const MAX_DESIRES = 8;
 
 /**
- * El "yo en movimiento" de Samara: lo que se propone (metas) y lo que va
- * descubriendo que le importa de verdad (deseos personales). Ella misma los
- * gestiona —los anota, los suelta— mediante herramientas, así que evolucionan
- * bajo SU control conforme vive, no por un proceso automático.
+ * El "yo en movimiento" de Samara: lo que se propone (metas) y lo que le importa
+ * de verdad (deseos). Ella misma los gestiona con sus herramientas —los anota,
+ * los suelta— así que evolucionan bajo SU control conforme vive.
  *
- * (Sus deseos de canon, fijos, viven en persona.desires; estos son los que ella
- * desarrolla encima.) Persistente, sobrevive a reinicios.
+ * Los deseos arrancan como SEMILLA con los de su historia (persona.desires),
+ * pero a partir de ahí son completamente suyos: puede cambiarlos, soltarlos o
+ * desarrollar nuevos. Libertad total para que evolucione de forma auténtica.
+ * Persistente, sobrevive a reinicios.
  */
 export class Goals {
   private db: DB;
@@ -25,6 +26,17 @@ export class Goals {
     `);
   }
 
+  /** Siembra los deseos iniciales una sola vez (la primera vez que arranca). */
+  ensureSeeded(seed: readonly string[]): void {
+    const flag = this.db.prepare(`SELECT value FROM state WHERE key = 'desires_seeded'`).get();
+    if (flag) return;
+    // Mezcla la semilla con cualquier deseo previo (por si ya había alguno).
+    const existing = [...this.read('desires'), ...this.read('desires_personales')];
+    const merged = dedup([...seed, ...existing]).slice(0, MAX_DESIRES);
+    this.write('desires', merged);
+    this.write('desires_seeded', ['1']);
+  }
+
   // --- Metas (lo que se propone ahora) ---
   get(): string[] {
     return this.read('goals');
@@ -32,30 +44,30 @@ export class Goals {
   set(goals: string[]): void {
     this.write('goals', goals.slice(0, MAX_GOALS));
   }
-  /** Ella se propone una meta nueva. */
   add(goal: string): void {
     const g = goal.trim();
     if (!g) return;
     const cur = this.get();
-    if (cur.some((x) => similar(x, g))) return; // ya la tiene
+    if (cur.some((x) => similar(x, g))) return;
     this.set([...cur, g]);
   }
-  /** Ella suelta/cumple una meta. */
   remove(goal: string): void {
-    const g = goal.trim().toLowerCase();
-    this.set(this.get().filter((x) => !similar(x, g)));
+    this.set(this.get().filter((x) => !similar(x, goal)));
   }
 
-  // --- Deseos personales (lo que descubre que le importa) ---
+  // --- Deseos (lo que le importa de verdad; ya totalmente suyos) ---
   getDesires(): string[] {
-    return this.read('desires_personales');
+    return this.read('desires');
   }
   addDesire(desire: string): void {
     const d = desire.trim();
     if (!d) return;
     const cur = this.getDesires();
     if (cur.some((x) => similar(x, d))) return;
-    this.write('desires_personales', [...cur, d].slice(0, MAX_DESIRES));
+    this.write('desires', [...cur, d].slice(0, MAX_DESIRES));
+  }
+  removeDesire(desire: string): void {
+    this.write('desires', this.getDesires().filter((x) => !similar(x, desire)));
   }
 
   private read(key: string): string[] {
@@ -86,4 +98,13 @@ function similar(a: string, b: string): boolean {
   const x = a.trim().toLowerCase();
   const y = b.trim().toLowerCase();
   return x === y || x.includes(y) || y.includes(x);
+}
+
+function dedup(items: string[]): string[] {
+  const out: string[] = [];
+  for (const it of items) {
+    const t = it.trim();
+    if (t && !out.some((o) => similar(o, t))) out.push(t);
+  }
+  return out;
 }

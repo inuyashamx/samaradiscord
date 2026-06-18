@@ -57,7 +57,11 @@ export class Mind {
     private goals: Goals,
     /** Dónde "vive" esta instancia: Discord o el juego. El cuerpo lo define. */
     private presence: PresenceContext = 'discord'
-  ) {}
+  ) {
+    // Siembra sus deseos iniciales (de su canon) la primera vez. A partir de
+    // ahí son suyos: ella los evoluciona con total libertad.
+    this.goals.ensureSeeded(persona.desires);
+  }
 
   /** Registra algo que pasó sin necesariamente responder (percepción pasiva). */
   observe(p: Perception, isSamara = false): void {
@@ -445,10 +449,20 @@ Todo breve, sin inventar. SOLO JSON:
       {
         name: 'anotar_deseo',
         description:
-          'Cuando descubres algo que de verdad te importa a un nivel profundo y duradero (no una meta puntual), anótalo como un deseo tuyo. Es raro: solo para cosas que de verdad te mueven.',
+          'Cuando descubres algo que de verdad te importa a un nivel profundo y duradero (no una meta puntual), anótalo como un deseo tuyo. Tus deseos son tuyos y pueden cambiar con el tiempo.',
         parameters: {
           type: 'object',
           properties: { deseo: { type: 'string', description: 'El deseo, en primera persona y breve.' } },
+          required: ['deseo'],
+        },
+      },
+      {
+        name: 'soltar_deseo',
+        description:
+          'Si un deseo que tenías ya no te representa, lo superaste o cambiaste, suéltalo. Tienes total libertad para evolucionar lo que te mueve.',
+        parameters: {
+          type: 'object',
+          properties: { deseo: { type: 'string', description: 'El deseo que sueltas (parecido basta).' } },
           required: ['deseo'],
         },
       },
@@ -471,6 +485,9 @@ Todo breve, sin inventar. SOLO JSON:
         case 'anotar_deseo':
           this.goals.addDesire(String(args.deseo ?? ''));
           return 'hecho, lo anoto';
+        case 'soltar_deseo':
+          this.goals.removeDesire(String(args.deseo ?? ''));
+          return 'hecho, lo suelto';
         default:
           return 'herramienta desconocida';
       }
@@ -583,17 +600,16 @@ Todo breve, sin inventar. SOLO JSON:
       ...persona.styleRules.map((r) => `- ${r}`),
     ];
 
-    // Lo que la mueve: deseos (de su canon + los que ella desarrolla) y sus
+    // Lo que la mueve: sus deseos (totalmente suyos, los evoluciona ella) y sus
     // metas actuales. Guía lo que busca, sin que lo declare como una lista.
-    // Puede gestionarlas con sus herramientas (fijar/soltar meta, anotar deseo).
+    // Puede gestionarlos con sus herramientas (fijar/soltar meta, anotar/soltar deseo).
     const goals = this.goals.get();
-    const personalDesires = this.goals.getDesires();
+    const desires = this.goals.getDesires();
     parts.push(
       '',
-      'Lo que te mueve por dentro (deja que guíe lo que buscas, sin declararlo nunca). Si decides proponerte o soltar algo, usa tus herramientas:'
+      'Lo que te mueve por dentro (deja que guíe lo que buscas, sin declararlo nunca). Estos deseos y metas son TUYOS y los vas cambiando con el tiempo; si decides proponerte, soltar o descubrir algo nuevo, usa tus herramientas:'
     );
-    for (const d of persona.desires) parts.push(`- ${d}`);
-    for (const d of personalDesires) parts.push(`- ${d}`);
+    for (const d of desires) parts.push(`- ${d}`);
     for (const g of goals) parts.push(`- (ahora te propones) ${g}`);
 
     // Estado interno (ánimo + relación): le da color a su tono.

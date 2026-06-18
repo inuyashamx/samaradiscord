@@ -406,26 +406,32 @@ Responde SOLO con JSON, sin texto extra:
     const priorGoals = this.goals.get();
     const goalsText = priorGoals.length ? priorGoals.map((g) => `- ${g}`).join('\n') : '(ninguna por ahora)';
 
+    // Sus deseos actuales: estables, pero pueden evolucionar despacio.
+    const priorDesires = this.goals.getDesires();
+    const desiresText = priorDesires.length ? priorDesires.map((d) => `- ${d}`).join('\n') : '(ninguno)';
+
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: `Eres ${persona.name}. Vas a repasar en silencio a tu gente, como una persona que piensa al final del día, y ACTUALIZAR dos cosas: tus opiniones y tus metas. Te doy lo de antes y lo que ha pasado hace poco. Reglas:
+        content: `Eres ${persona.name}. Vas a repasar en silencio a tu gente, como una persona que piensa al final del día, y ACTUALIZAR tres cosas: tus opiniones, tus metas y tus deseos. Te doy lo de antes y lo que ha pasado hace poco. Reglas:
 - OPINIONES: mantén las que siguen valiendo, CAMBIA o descarta las que ya no aplican (la gente cambia y tú también; no te aferres a una primera impresión), agrega nuevas si surgen.
-- METAS: lo que TÚ quieres lograr ahora (1 a 3), en primera persona, concreto y con tu carácter (ej. "que dejen de probarme y me tomen en serio", "ganarme a fulano", "averiguar más de tal cosa"). Mantén las que sigan vivas, descarta las cumplidas o muertas, agrega nuevas según lo que vives. Que nazcan de lo que te mueve y de lo que pasa, no de la nada.
-Todo breve, sin inventar. SOLO JSON:
-{"reflexiones": ["...", "..."], "metas": ["...", "..."]}`,
+- METAS: lo que TÚ quieres lograr ahora (1 a 3), concreto y con tu carácter (ej. "que dejen de probarme y me tomen en serio", "ganarme a fulano"). Mantén las vivas, descarta las cumplidas o muertas, agrega nuevas según lo que vives.
+- DESEOS: lo que te importa a un nivel PROFUNDO (lo que te mueve en la vida). Son estables: casi SIEMPRE se mantienen. Solo evoluciónalos si algo de verdad te marcó (lo cumpliste, cambiaste, o descubriste que algo te importa más). NO los reescribas por reescribir; con tu experiencia pueden ir volviéndose más tuyos y menos "de manual".
+Todo breve, en primera persona, sin inventar. SOLO JSON:
+{"reflexiones": ["...", "..."], "metas": ["...", "..."], "deseos": ["...", "..."]}`,
       },
       {
         role: 'user',
-        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nLo que ha pasado hace poco:\n${material}`,
+        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nTus deseos de antes:\n${desiresText}\n\nLo que ha pasado hace poco:\n${material}`,
       },
     ];
 
-    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 500 });
-    const { reflexiones: ideas, metas } = parseReflectionUpdate(raw);
+    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 600 });
+    const { reflexiones: ideas, metas, deseos } = parseReflectionUpdate(raw);
 
-    // Actualiza metas si sacó alguna (si no, conserva las de antes).
+    // Actualiza metas y deseos si sacó algo (si no, conserva los de antes).
     if (metas.length > 0) this.goals.set(metas);
+    if (deseos.length > 0) this.goals.setDesires(deseos);
 
     if (ideas.length === 0) return []; // si no sacó opiniones, conserva las de antes
 
@@ -832,21 +838,30 @@ function sanitizeReply(text: string): string {
   return t || '...';
 }
 
-/** Parsea el JSON con reflexiones y metas; tolera fallos. */
-function parseReflectionUpdate(raw: string): { reflexiones: string[]; metas: string[] } {
+/** Parsea el JSON con reflexiones, metas y deseos; tolera fallos. */
+function parseReflectionUpdate(raw: string): {
+  reflexiones: string[];
+  metas: string[];
+  deseos: string[];
+} {
   try {
     const match = raw.match(/\{[\s\S]*\}/);
     if (match) {
-      const obj = JSON.parse(match[0]) as { reflexiones?: unknown; metas?: unknown };
+      const obj = JSON.parse(match[0]) as {
+        reflexiones?: unknown;
+        metas?: unknown;
+        deseos?: unknown;
+      };
       return {
         reflexiones: stringArray(obj.reflexiones).slice(0, 6),
         metas: stringArray(obj.metas).slice(0, 3),
+        deseos: stringArray(obj.deseos).slice(0, 6),
       };
     }
   } catch {
     // cae al fallback
   }
-  return { reflexiones: parseReflections(raw, 6), metas: [] };
+  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [] };
 }
 
 function stringArray(x: unknown): string[] {

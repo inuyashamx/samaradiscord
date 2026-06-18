@@ -69,6 +69,10 @@ export class Goals {
   removeDesire(desire: string): void {
     this.write('desires', this.getDesires().filter((x) => !similar(x, desire)));
   }
+  /** Reemplaza el set completo de deseos (lo usa la reflexión al revisarlos). */
+  setDesires(desires: string[]): void {
+    this.write('desires', dedup(desires).slice(0, MAX_DESIRES));
+  }
 
   private read(key: string): string[] {
     const row = this.db.prepare(`SELECT value FROM state WHERE key = ?`).get(key) as

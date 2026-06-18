@@ -150,6 +150,23 @@ export class DiscordBody {
       return;
     }
 
+    // Dirigido a OTRA persona (le responde o la etiqueta) y NO la nombran a ella:
+    // es para esa persona, Samara no se mete (ni siquiera evalúa). Salvo que su
+    // nombre aparezca en el texto (ahí quizá también le hablan).
+    const namesSamara = /\bsamara\b/i.test(perception.content);
+    const directedAtOther = replyToOther != null || mentionsOthers.length > 0;
+    if (!explicitlyDirect && directedAtOther && !namesSamara) {
+      this.mind.observe(perception);
+      void this.mind.remember(perception).catch(() => {});
+      debugLog('omite', {
+        motivo: 'dirigido a otra persona',
+        a: replyToOther ?? mentionsOthers.join(', '),
+        de: authorName,
+      });
+      this.armIdle(msg);
+      return;
+    }
+
     try {
       // Si la etiquetan/responden, contesta. Si no, ELLA decide si entra o se
       // queda callada (allowSilence): no hay un clasificador externo decidiendo.

@@ -310,6 +310,10 @@ export class Mind {
     const priorLessons = this.goals.getLessons();
     const lessonsText = priorLessons.length ? priorLessons.map((l) => `- ${l}`).join('\n') : '(ninguno)';
 
+    // Vivencias recientes (para no repetir las que ya guardó).
+    const priorExp = this.memory.recentMemories(10, 'experience');
+    const expText = priorExp.length ? priorExp.map((e) => `- ${e.content}`).join('\n') : '(ninguna)';
+
     const messages: ChatMessage[] = [
       {
         role: 'system',
@@ -318,22 +322,25 @@ export class Mind {
 - METAS: lo que TÚ quieres lograr ahora (1 a 3), concreto y con tu carácter. Mantén las vivas, descarta las cumplidas o muertas, agrega nuevas según lo que vives.
 - DESEOS: lo que te importa a un nivel PROFUNDO. Son estables: casi SIEMPRE se mantienen. Solo evoluciónalos si algo de verdad te marcó; no los reescribas por reescribir.
 - AJUSTES: reglas que TÚ te pones sobre cómo manejarte o leer las cosas (ej. "ubico de quién viene una emoción antes de reaccionar", "con desconocidos mido más"). Si te diste cuenta de algo sobre ti, anótalo; suelta los que ya no necesites. Así te vas afinando tú sola.
+- EXPERIENCIAS: vivencias con forma de historia que valga la pena recordar (qué pasó, con quién, cómo te sentiste, qué te dejó). Solo las NUEVAS y significativas de lo reciente; NO repitas las que ya tienes ni guardes trivialidades.
 Todo breve, en primera persona, sin inventar. SOLO JSON:
-{"reflexiones": ["..."], "metas": ["..."], "deseos": ["..."], "ajustes": ["..."]}`,
+{"reflexiones": ["..."], "metas": ["..."], "deseos": ["..."], "ajustes": ["..."], "experiencias": ["..."]}`,
       },
       {
         role: 'user',
-        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nTus deseos de antes:\n${desiresText}\n\nTus ajustes de antes:\n${lessonsText}\n\nLo que ha pasado hace poco:\n${material}`,
+        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nTus deseos de antes:\n${desiresText}\n\nTus ajustes de antes:\n${lessonsText}\n\nVivencias que ya guardaste:\n${expText}\n\nLo que ha pasado hace poco:\n${material}`,
       },
     ];
 
-    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 700 });
-    const { reflexiones: ideas, metas, deseos, ajustes } = parseReflectionUpdate(raw);
+    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 800 });
+    const { reflexiones: ideas, metas, deseos, ajustes, experiencias } = parseReflectionUpdate(raw);
 
     // Actualiza metas, deseos y ajustes si sacó algo (si no, conserva los de antes).
     if (metas.length > 0) this.goals.set(metas);
     if (deseos.length > 0) this.goals.setDesires(deseos);
     if (ajustes.length > 0) this.goals.setLessons(ajustes);
+    // Las experiencias se ACUMULAN (son su biografía), no se reemplazan.
+    for (const exp of experiencias) await this.storeExperience(exp, 'global');
 
     if (ideas.length === 0) return []; // si no sacó opiniones, conserva las de antes
 
@@ -358,6 +365,33 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
       );
     }
     return ideas;
+  }
+
+  /**
+   * Guarda una EXPERIENCIA (vivencia con forma de historia): qué pasó, quiénes,
+   * cómo se sintió, qué dejó. Es su memoria autobiográfica. Evita duplicados
+   * contra las experiencias recientes. Devuelve true si la guardó.
+   */
+  private async storeExperience(content: string, channelId: string): Promise<boolean> {
+    const text = content.trim();
+    if (text.length < 8) return false;
+    const recientes = this.memory.recentMemories(20, 'experience');
+    if (recientes.some((e) => textOverlap(e.content, text))) return false; // ya la tiene
+
+    const embedding = await this.llm.embed(text);
+    const subject = subjectOf(text, this.relationships.all()); // si es con alguien, etiquétala
+    this.memory.remember(
+      {
+        channelId,
+        authorId: subject ?? 'samara',
+        authorName: persona.name,
+        content: text,
+        kind: 'experience',
+        importance: 7, // una vivencia pesa más que una opinión o un mensaje
+      },
+      embedding
+    );
+    return true;
   }
 
   /**
@@ -457,6 +491,16 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           required: ['ajuste'],
         },
       },
+      {
+        name: 'guardar_experiencia',
+        description:
+          'Cuando vives algo que de verdad te marca y quieres recordarlo como una vivencia (no un dato suelto), guárdalo. Cuenta qué pasó, con quién, cómo te sentiste y qué te dejó, en una o dos frases. Es tu memoria de las cosas que viviste. Úsalo solo para momentos que importan.',
+        parameters: {
+          type: 'object',
+          properties: { experiencia: { type: 'string', description: 'La vivencia, breve y en primera persona.' } },
+          required: ['experiencia'],
+        },
+      },
     ];
 
     // Solo cuando no la etiquetan: ella puede decidir NO responder.
@@ -506,6 +550,10 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         case 'ajustarme':
           this.goals.addLesson(String(args.ajuste ?? ''));
           return 'anotado, lo tendré presente';
+        case 'guardar_experiencia': {
+          const ok = await this.storeExperience(String(args.experiencia ?? ''), channelId);
+          return ok ? 'guardado, esto me lo quedo' : 'eso ya lo tengo o es muy poco';
+        }
         case 'quedarme_callada':
           silent = true;
           return 'ok, te quedas callada';
@@ -668,9 +716,11 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado). OJO: son de DISTINTAS personas y momentos; NO le atribuyas a quien te habla ahora lo que dijo o hizo otra persona. Y el TONO o la carga emocional de un recuerdo pertenece a AQUEL momento: no traslades ese ánimo a esta conversación salvo que de verdad venga al caso:'
       );
       for (const m of recalled) {
-        // Las reflexiones son conclusiones suyas; los episodios, cosas que se dijeron.
+        // Distingue: opiniones suyas, vivencias suyas, y cosas que se dijeron.
         if (m.kind === 'reflection') {
           parts.push(`- (algo que piensas) ${m.content}`);
+        } else if (m.kind === 'experience') {
+          parts.push(`- (algo que viviste) ${m.content}`);
         } else {
           parts.push(`- ${m.authorName} dijo: "${m.content}"`);
         }
@@ -752,6 +802,7 @@ function parseReflectionUpdate(raw: string): {
   metas: string[];
   deseos: string[];
   ajustes: string[];
+  experiencias: string[];
 } {
   try {
     const match = raw.match(/\{[\s\S]*\}/);
@@ -761,18 +812,20 @@ function parseReflectionUpdate(raw: string): {
         metas?: unknown;
         deseos?: unknown;
         ajustes?: unknown;
+        experiencias?: unknown;
       };
       return {
         reflexiones: stringArray(obj.reflexiones).slice(0, 6),
         metas: stringArray(obj.metas).slice(0, 3),
         deseos: stringArray(obj.deseos).slice(0, 6),
         ajustes: stringArray(obj.ajustes).slice(0, 8),
+        experiencias: stringArray(obj.experiencias).slice(0, 4),
       };
     }
   } catch {
     // cae al fallback
   }
-  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [], ajustes: [] };
+  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [], ajustes: [], experiencias: [] };
 }
 
 /**
@@ -791,6 +844,19 @@ function subjectOf(idea: string, people: Array<{ authorId: string; authorName: s
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** ¿Dos textos cuentan básicamente lo mismo? (dedup de experiencias). */
+function textOverlap(a: string, b: string): boolean {
+  const words = (s: string) =>
+    new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 3));
+  const wa = words(a);
+  const wb = words(b);
+  if (wa.size === 0 || wb.size === 0) return false;
+  let inter = 0;
+  for (const w of wa) if (wb.has(w)) inter++;
+  const union = wa.size + wb.size - inter;
+  return inter / union > 0.5; // >50% de palabras significativas en común
 }
 
 function stringArray(x: unknown): string[] {

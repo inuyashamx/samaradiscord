@@ -71,6 +71,14 @@ function main(): void {
   }
   console.log('');
 
+  // Experiencias (vivencias que guardó)
+  const experiences = memory.recentMemories(12, 'experience');
+  if (experiences.length > 0) {
+    console.log(`🎬  EXPERIENCIAS QUE HA VIVIDO (${experiences.length})`);
+    for (const e of experiences) console.log(`   • ${e.content}`);
+    console.log('');
+  }
+
   // Opiniones propias (reflexiones)
   const reflections = memory.recentMemories(15, 'reflection');
   console.log(`💭  OPINIONES / CONCLUSIONES (${reflections.length})`);

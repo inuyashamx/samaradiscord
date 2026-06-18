@@ -6,7 +6,7 @@ import { openDb, type DB } from './db.js';
  */
 const EMBED_DIM = 1536;
 
-export type MemoryKind = 'episodic' | 'reflection';
+export type MemoryKind = 'episodic' | 'reflection' | 'experience';
 
 export interface MemoryInput {
   channelId: string;

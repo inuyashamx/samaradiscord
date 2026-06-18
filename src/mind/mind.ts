@@ -636,7 +636,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     if (recalled.length > 0) {
       parts.push(
         '',
-        'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado). OJO: son de DISTINTAS personas y momentos; NO le atribuyas a quien te habla ahora lo que dijo o hizo otra persona:'
+        'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado). OJO: son de DISTINTAS personas y momentos; NO le atribuyas a quien te habla ahora lo que dijo o hizo otra persona. Y el TONO o la carga emocional de un recuerdo pertenece a AQUEL momento: no traslades ese ánimo a esta conversación salvo que de verdad venga al caso:'
       );
       for (const m of recalled) {
         // Las reflexiones son conclusiones suyas; los episodios, cosas que se dijeron.

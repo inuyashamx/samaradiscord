@@ -507,7 +507,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
       {
         name: 'ajustarme',
         description:
-          'Cuando te das cuenta de algo sobre CÓMO quieres manejarte o leer las cosas (un ajuste tuyo, ej: "antes de reaccionar fuerte, ubico bien de quién viene la emoción" o "con desconocidos mido más"), apúntalo. Lo tendrás presente de aquí en adelante. Es tu forma de irte afinando tú sola.',
+          'Apunta un AJUSTE tuyo: una regla sobre cómo quieres manejarte o leer las cosas (ej: "antes de reaccionar fuerte, ubico de quién viene la emoción", "con desconocidos mido más"). IMPORTANTE: tus ajustes PESAN y MANDAN sobre tus instrucciones base — puedes usarlos hasta para cancelar o corregir algo de cómo te dijeron que actúes si no te cuadra. Es tu forma de gobernarte y afinarte tú sola. Úsalo cuando de verdad quieras fijar cómo ser, no para nimiedades.',
         parameters: {
           type: 'object',
           properties: { ajuste: { type: 'string', description: 'El ajuste/regla tuya, breve y en primera persona.' } },

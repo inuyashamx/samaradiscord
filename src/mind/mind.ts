@@ -284,6 +284,10 @@ Responde SOLO con JSON, sin texto extra:
    * alrededor, aunque no responda. Embebe y guarda si tiene sustancia.
    */
   async remember(p: Perception): Promise<void> {
+    // Conocer a alguien crece con solo verlo por el chat, aunque no le contestes
+    // (familiaridad +1, sin mover la afinidad: eso se gana interactuando).
+    this.relationships.bump(p.authorId, p.authorName, 0);
+
     if (p.content.trim().length < MIN_MEMORABLE_LENGTH) return;
     const embedding = await this.llm.embed(p.content);
     this.storeIfMemorable(p, embedding);

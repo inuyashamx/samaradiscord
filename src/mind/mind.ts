@@ -334,18 +334,36 @@ Responde SOLO con JSON, sin texto extra:
     if (recent.length < 4) return []; // todavía no hay material suficiente
 
     const material = recent.map((m) => `${m.authorName}: ${m.content}`).join('\n');
+
+    // Sus opiniones actuales: las revisa, no parte de cero. Así puede CAMBIAR
+    // de parecer en vez de quedarse con la primera impresión para siempre.
+    const prior = this.memory.recentMemories(20, 'reflection');
+    const priorText = prior.length
+      ? prior.map((r) => `- ${r.content}`).join('\n')
+      : '(todavía no tienes opiniones formadas)';
+
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: `Eres ${persona.name}. Vas a repasar en silencio lo que ha pasado últimamente en el chat y sacar tus propias conclusiones, como cuando una persona piensa en su gente al final del día. Saca de 2 a 4 ideas u opiniones TUYAS, sobre todo acerca de las personas (cómo te caen, cómo son, qué notas en ellas) y los temas que se repiten. Escríbelas en primera persona, breves, honestas y con tu carácter (puedes ser crítica). No te inventes cosas que no se vean en el material. Devuelve SOLO JSON:
+        content: `Eres ${persona.name}. Vas a repasar en silencio a tu gente, como una persona que piensa en ellos al final del día, y ACTUALIZAR tus opiniones. Te doy tus conclusiones de antes y lo que ha pasado hace poco. Reglas:
+- Mantén las opiniones que SIGUEN valiendo.
+- CAMBIA o descarta las que ya no aplican: la gente cambia y tú también. Si alguien empezó con el pie izquierdo pero ya se portó mejor (o al revés), ajústalo. No te aferres a una primera impresión.
+- Agrega opiniones nuevas si surgen.
+Devuelve tu lista COMPLETA y vigente de 2 a 6 conclusiones (en primera persona, breves, con tu carácter, sin inventar). SOLO JSON:
 {"reflexiones": ["...", "..."]}`,
       },
-      { role: 'user', content: `Lo que ha pasado:\n${material}` },
+      {
+        role: 'user',
+        content: `Tus opiniones de antes:\n${priorText}\n\nLo que ha pasado hace poco:\n${material}`,
+      },
     ];
 
-    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 300 });
-    const ideas = parseReflections(raw);
+    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 400 });
+    const ideas = parseReflections(raw, 6);
+    if (ideas.length === 0) return []; // si no sacó nada, conserva las de antes
 
+    // Reemplaza el set viejo por el revisado (sus opiniones quedan al día).
+    this.memory.deleteReflections();
     for (const idea of ideas) {
       const embedding = await this.llm.embed(idea);
       this.memory.remember(
@@ -561,7 +579,7 @@ function clampNum(x: unknown, lo: number, hi: number, fallback = 0): number {
 }
 
 /** Parsea las reflexiones; acepta JSON o, si falla, líneas sueltas. */
-function parseReflections(raw: string): string[] {
+function parseReflections(raw: string, max = 4): string[] {
   try {
     const match = raw.match(/\{[\s\S]*\}/);
     if (match) {
@@ -571,7 +589,7 @@ function parseReflections(raw: string): string[] {
           .filter((x): x is string => typeof x === 'string')
           .map((s) => s.trim())
           .filter((s) => s.length > 0)
-          .slice(0, 4);
+          .slice(0, max);
       }
     }
   } catch {
@@ -582,7 +600,7 @@ function parseReflections(raw: string): string[] {
     .split('\n')
     .map((l) => l.replace(/^[-*\d.)\s]+/, '').trim())
     .filter((l) => l.length > 0)
-    .slice(0, 4);
+    .slice(0, max);
 }
 
 /** La búsqueda vectorial puede fallar si la tabla está vacía; degradamos a []. */

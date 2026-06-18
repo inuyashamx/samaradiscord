@@ -148,6 +148,20 @@ export class MemoryStore {
     return rows.reverse();
   }
 
+  /** Borra todas las reflexiones (para reemplazarlas por una versión revisada). */
+  deleteReflections(): void {
+    const ids = this.db
+      .prepare(`SELECT id FROM memories WHERE kind = 'reflection'`)
+      .all() as Array<{ id: number }>;
+    if (ids.length === 0) return;
+    const delVec = this.db.prepare('DELETE FROM vec_memories WHERE rowid = ?');
+    const tx = this.db.transaction((rows: Array<{ id: number }>) => {
+      for (const r of rows) delVec.run(BigInt(r.id));
+      this.db.prepare(`DELETE FROM memories WHERE kind = 'reflection'`).run();
+    });
+    tx(ids);
+  }
+
   count(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {
       n: number;

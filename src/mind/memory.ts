@@ -185,6 +185,33 @@ export class MemoryStore {
     return rows.reverse();
   }
 
+  /**
+   * Olvida los recuerdos episódicos viejos que sobran: conserva los `keep` más
+   * recientes y borra el resto (con su vector). Las reflexiones NO se tocan.
+   * Devuelve cuántos olvidó.
+   */
+  forgetOldEpisodic(keep: number): number {
+    if (keep <= 0) return 0;
+    const ids = this.db
+      .prepare(
+        `SELECT id FROM memories WHERE kind = 'episodic'
+         ORDER BY created_at DESC LIMIT -1 OFFSET ?`
+      )
+      .all(keep) as Array<{ id: number }>;
+    if (ids.length === 0) return 0;
+
+    const delVec = this.db.prepare('DELETE FROM vec_memories WHERE rowid = ?');
+    const delMem = this.db.prepare('DELETE FROM memories WHERE id = ?');
+    const tx = this.db.transaction((rows: Array<{ id: number }>) => {
+      for (const r of rows) {
+        delVec.run(BigInt(r.id));
+        delMem.run(r.id);
+      }
+    });
+    tx(ids);
+    return ids.length;
+  }
+
   /** Borra todas las reflexiones (para reemplazarlas por una versión revisada). */
   deleteReflections(): void {
     const ids = this.db

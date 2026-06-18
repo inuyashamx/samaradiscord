@@ -270,6 +270,9 @@ export class Mind {
     try {
       const ideas = await this.reflect();
       if (ideas.length) console.log(`💭 Samara reflexionó (${ideas.length} ideas).`);
+      // Al "dormir", olvida lo viejo y trivial (lo importante ya es reflexión).
+      const forgotten = this.memory.forgetOldEpisodic(config.behavior.memoryKeepEpisodic);
+      if (forgotten) console.log(`🗑️  Samara olvidó ${forgotten} recuerdos viejos.`);
     } catch (err) {
       console.error('Error en reflexión:', err);
     } finally {

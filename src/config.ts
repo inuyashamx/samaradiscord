@@ -49,6 +49,12 @@ export const config = {
     // Reflexión: cada cuántas interacciones Samara "repasa" lo vivido y saca
     // conclusiones/opiniones propias que guarda como recuerdos. 0 = desactivado.
     reflectionEvery: Number(process.env.REFLECTION_EVERY ?? 12),
+    // Olvido: al reflexionar, conserva los N recuerdos episódicos más recientes
+    // y olvida los viejos que sobran (lo importante ya quedó en sus reflexiones).
+    // Umbral ALTO a propósito: con pocos recuerdos cada uno vale, así que solo
+    // poda cuando ya tiene una montaña. Las reflexiones nunca se borran.
+    // 0 = no olvidar nunca. Baja el número si quieres que olvide antes.
+    memoryKeepEpisodic: Number(process.env.MEMORY_KEEP_EPISODIC ?? 5000),
     // Estilo de "chat real": fuerza minúsculas, sin acentos/puntos/signos de
     // apertura. El modelo no obedece esto solo, así que se aplica al texto.
     // Pon CASUAL_STYLE=false para escritura normal con ortografía.

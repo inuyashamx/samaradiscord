@@ -29,6 +29,16 @@ export class Relationships {
     `);
   }
 
+  /** Todas las relaciones, de la más conocida a la menos. */
+  all(): Relationship[] {
+    return this.db
+      .prepare(
+        `SELECT author_id AS authorId, author_name AS authorName, affinity, familiarity
+         FROM relationships ORDER BY familiarity DESC, affinity DESC`
+      )
+      .all() as Relationship[];
+  }
+
   get(authorId: string): Relationship | null {
     const row = this.db
       .prepare(

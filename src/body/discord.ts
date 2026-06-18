@@ -15,6 +15,31 @@ function cleanText(text: string): string {
 }
 
 /**
+ * Reemplaza las menciones crudas de Discord (<@id>, <@&id>, <#id>) por nombres
+ * legibles. Sin esto, el modelo ve IDs numéricos, se confunde sobre quién es
+ * quién y puede acabar respondiendo como si fuera otra persona.
+ */
+function resolveMentions(msg: Message): string {
+  let content = msg.content;
+  // Usuarios: <@id> o <@!id>
+  content = content.replace(/<@!?(\d+)>/g, (_m, id: string) => {
+    const name = msg.mentions.members?.get(id)?.displayName ?? msg.mentions.users.get(id)?.username;
+    return name ? `@${name}` : '@alguien';
+  });
+  // Roles: <@&id>
+  content = content.replace(/<@&(\d+)>/g, (_m, id: string) => {
+    const role = msg.guild?.roles.cache.get(id);
+    return role ? `@${role.name}` : '@rol';
+  });
+  // Canales: <#id>
+  content = content.replace(/<#(\d+)>/g, (_m, id: string) => {
+    const ch = msg.guild?.channels.cache.get(id);
+    return ch ? `#${ch.name}` : '#canal';
+  });
+  return content;
+}
+
+/**
  * Estilo "chat real": el modelo escribe con ortografía perfecta por más que se
  * le pida lo contrario, así que normalizamos el texto. Minúsculas, sin acentos
  * (conservando la ñ), sin puntos finales ni "...", sin signos de apertura ¿¡.
@@ -80,7 +105,7 @@ export class DiscordBody {
       channelId: msg.channelId,
       authorId: msg.author.id,
       authorName,
-      content: msg.content,
+      content: resolveMentions(msg), // <@id> -> @Nombre (si no, el modelo se confunde)
       isDev: this.isDev(msg.author.id, authorName, msg.author.username),
     };
 

@@ -13,6 +13,7 @@ const N = Number(process.argv[2]) || 40;
 const ICON: Record<string, string> = {
   mensaje: '💬',
   recall: '🧠',
+  prompt: '📝',
   tool: '🔧',
   responde: '🗣️',
   silencio: '🤐',
@@ -37,8 +38,14 @@ for (const line of lines.slice(-N)) {
     const icon = ICON[event] ?? '·';
     console.log(`${hora} ${icon} ${event}`);
     for (const [k, v] of Object.entries(data)) {
-      const val = Array.isArray(v) ? `\n     - ${v.join('\n     - ')}` : JSON.stringify(v);
-      console.log(`     ${k}: ${val}`);
+      if (typeof v === 'string' && v.includes('\n')) {
+        // textos multilinea (como el prompt): se muestran con sus saltos reales
+        console.log(`     ${k}:`);
+        for (const ln of v.split('\n')) console.log(`       │ ${ln}`);
+      } else {
+        const val = Array.isArray(v) ? `\n     - ${v.join('\n     - ')}` : JSON.stringify(v);
+        console.log(`     ${k}: ${val}`);
+      }
     }
   } catch {
     // línea corrupta, ignora

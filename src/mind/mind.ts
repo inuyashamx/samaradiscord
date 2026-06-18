@@ -194,6 +194,12 @@ export class Mind {
       state: `${temporal}\n${stateNote}`,
       instruction,
     });
+    // Para debug: el prompt completo que se le arma (system) y cuántos turnos lleva.
+    debugLog('prompt', {
+      para: p.authorName,
+      system: messages[0]?.content,
+      turnos: messages.length - 1,
+    });
     const reply = await this.generateReply(p.channelId, messages, opts.allowSilence);
 
     // Si decidió quedarse callada: igual recuerda lo que presenció (la vio

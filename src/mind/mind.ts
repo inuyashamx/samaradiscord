@@ -30,7 +30,7 @@ export interface TurnDecision {
 }
 
 /** Cuántos recuerdos de largo plazo recuperar por respuesta. */
-const RECALL_K = 8;
+const RECALL_K = 10;
 /** Solo guardamos como recuerdo lo que tenga algo de sustancia. */
 const MIN_MEMORABLE_LENGTH = 12;
 
@@ -466,6 +466,22 @@ Todo breve, sin inventar. SOLO JSON:
           required: ['deseo'],
         },
       },
+      {
+        name: 'recordar',
+        description:
+          'Busca en TU propia memoria (lo que has vivido y concluido) sobre un tema o una persona, para traerlo al frente cuando algo se sienta borroso. Es tu memoria ya procesada, distinta del historial crudo del chat.',
+        parameters: {
+          type: 'object',
+          properties: { tema: { type: 'string', description: 'Tema, persona o palabras clave a recordar.' } },
+          required: ['tema'],
+        },
+      },
+      {
+        name: 'mi_estado',
+        description:
+          'Consulta tu estado interno actual: tu ánimo, tus deseos y metas, y cómo te llevas con la gente. Úsalo cuando necesites claridad sobre cómo estás o qué quieres ahora.',
+        parameters: { type: 'object', properties: {} },
+      },
     ];
 
     const runTool: ToolRunner = async (name, args) => {
@@ -488,12 +504,40 @@ Todo breve, sin inventar. SOLO JSON:
         case 'soltar_deseo':
           this.goals.removeDesire(String(args.deseo ?? ''));
           return 'hecho, lo suelto';
+        case 'recordar': {
+          const emb = await this.llm.embed(String(args.tema ?? ''));
+          const found = safeRecall(this.memory, emb, 10);
+          if (found.length === 0) return 'no me viene nada claro sobre eso';
+          return found
+            .map((m) => (m.kind === 'reflection' ? `(piensas) ${m.content}` : `${m.authorName}: ${m.content}`))
+            .join('\n');
+        }
+        case 'mi_estado':
+          return this.selfStateSummary();
         default:
           return 'herramienta desconocida';
       }
     };
 
     return sanitizeReply(await this.llm.chatWithTools(messages, tools, runTool));
+  }
+
+  /** Resumen de su estado interno (para la herramienta mi_estado). */
+  private selfStateSummary(): string {
+    const lines = [`animo: ${this.emotion.describe()}`];
+    const des = this.goals.getDesires();
+    if (des.length) lines.push(`deseos: ${des.join(' | ')}`);
+    const met = this.goals.get();
+    if (met.length) lines.push(`metas: ${met.join(' | ')}`);
+    const rels = this.relationships
+      .all()
+      .slice(0, 8)
+      .map((r) => {
+        const lbl = r.affinity > 0.3 ? 'bien' : r.affinity < -0.3 ? 'mal' : 'normal';
+        return `${r.authorName} (${lbl}, ${r.familiarity} interacc)`;
+      });
+    if (rels.length) lines.push(`relaciones: ${rels.join(', ')}`);
+    return lines.join('\n');
   }
 
   /** Nota de tiempo: momento del día, silencio del chat, ausencias. */

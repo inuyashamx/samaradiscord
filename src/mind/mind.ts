@@ -515,6 +515,16 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         },
       },
       {
+        name: 'soltar_ajuste',
+        description:
+          'Si un ajuste tuyo ya no te sirve, lo superaste o cambiaste de parecer sobre cómo manejarte, suéltalo. Para CAMBIAR uno: suelta el viejo y apunta el nuevo. Tú decides qué reglas conservas.',
+        parameters: {
+          type: 'object',
+          properties: { ajuste: { type: 'string', description: 'El ajuste que sueltas (parecido basta).' } },
+          required: ['ajuste'],
+        },
+      },
+      {
         name: 'guardar_experiencia',
         description:
           'Cuando vives algo que de verdad te marca y quieres recordarlo como una vivencia (no un dato suelto), guárdalo. Cuenta qué pasó, con quién, cómo te sentiste y qué te dejó, en una o dos frases. Es tu memoria de las cosas que viviste. Úsalo solo para momentos que importan.',
@@ -573,6 +583,9 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         case 'ajustarme':
           this.goals.addLesson(String(args.ajuste ?? ''));
           return 'anotado, lo tendré presente';
+        case 'soltar_ajuste':
+          this.goals.removeLesson(String(args.ajuste ?? ''));
+          return 'hecho, lo suelto';
         case 'guardar_experiencia': {
           const ok = await this.storeExperience(String(args.experiencia ?? ''), channelId);
           return ok ? 'guardado, esto me lo quedo' : 'eso ya lo tengo o es muy poco';

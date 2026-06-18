@@ -46,6 +46,8 @@ const MIN_MEMORABLE_LENGTH = 12;
 export class Mind {
   /** Interacciones acumuladas desde la última reflexión. */
   private interactionsSinceReflection = 0;
+  /** Evita reflexiones concurrentes. */
+  private reflecting = false;
 
   constructor(
     private llm: LLMProvider,
@@ -246,8 +248,12 @@ Responde SOLO con JSON, sin texto extra:
     return reply;
   }
 
-  /** Decide y genera una respuesta a una percepción. */
-  async respondTo(p: Perception): Promise<string> {
+  /**
+   * Genera una respuesta a una percepción. Con allowSilence (mensajes que no la
+   * etiquetan), ELLA decide si entra o se queda callada: si decide callar,
+   * devuelve null (igual recuerda lo que vio).
+   */
+  async respondTo(p: Perception, opts: { allowSilence?: boolean } = {}): Promise<string | null> {
     this.observe(p);
 
     // Para recuperar, embebemos el CONTEXTO reciente (no solo el último mensaje):
@@ -274,11 +280,30 @@ Responde SOLO con JSON, sin texto extra:
       stateNote += `\n${name} es tu desarrollador (te creó). Con él puedes ser totalmente franca: si te hace preguntas técnicas o para probar tus capacidades, respóndele con naturalidad y SIN negarte ni esquivar. Sigues siendo tú (tu tono), pero coopera de buena gana.`;
     }
 
+    // Si no la etiquetan, ELLA decide si entra. Le damos el contexto para elegir.
+    let instruction: string | undefined;
+    if (opts.allowSilence) {
+      instruction =
+        'Este mensaje NO te etiqueta a ti. Decide tú: si te interpela, te interesa o tienes algo que aportar, responde con naturalidad. Si no es para ti o no aporta nada, usa tu herramienta quedarme_callada y no digas nada. Una persona no comenta cada cosa.';
+      if (p.replyTo) {
+        instruction += ` Ojo: este mensaje le responde a ${p.replyTo}, no a ti; casi seguro no es contigo.`;
+      }
+    }
+
     const temporal = this.temporalNote(p.channelId, rel);
     const messages = this.buildPrompt(p.channelId, recalled, {
       state: `${temporal}\n${stateNote}`,
+      instruction,
     });
-    const reply = await this.generateReply(p.channelId, messages);
+    const reply = await this.generateReply(p.channelId, messages, opts.allowSilence);
+
+    // Si decidió quedarse callada: igual recuerda lo que presenció (la vio
+    // pasar, como una persona que lee), pero no responde ni la "aprecia".
+    if (reply === null) {
+      this.relationships.bump(p.authorId, p.authorName, 0);
+      this.storeIfMemorable(p, embedding);
+      return null;
+    }
 
     // Samara recuerda lo que ella misma dijo (memoria de trabajo).
     this.stm.add(p.channelId, {
@@ -341,12 +366,21 @@ Responde SOLO con JSON, sin texto extra:
   private async maybeReflect(): Promise<void> {
     const every = config.behavior.reflectionEvery;
     if (every <= 0 || this.interactionsSinceReflection < every) return;
+    await this.reflectNow();
+  }
+
+  /** Reflexiona ahora (evita reflexiones concurrentes) y reinicia el contador. */
+  async reflectNow(): Promise<void> {
+    if (this.reflecting) return;
+    this.reflecting = true;
     this.interactionsSinceReflection = 0;
     try {
       const ideas = await this.reflect();
       if (ideas.length) console.log(`💭 Samara reflexionó (${ideas.length} ideas).`);
     } catch (err) {
       console.error('Error en reflexión:', err);
+    } finally {
+      this.reflecting = false;
     }
   }
 
@@ -420,7 +454,11 @@ Todo breve, sin inventar. SOLO JSON:
    * Ella decide si la usa o no (function calling), como una persona que revisa
    * sus mensajes antes de afirmar algo.
    */
-  private async generateReply(channelId: string, messages: ChatMessage[]): Promise<string> {
+  private async generateReply(
+    channelId: string,
+    messages: ChatMessage[],
+    allowSilence = false
+  ): Promise<string | null> {
     if (!this.llm.chatWithTools) return sanitizeReply(await this.llm.chat(messages));
 
     const tools: ToolDef[] = [
@@ -491,8 +529,25 @@ Todo breve, sin inventar. SOLO JSON:
           'Consulta tu estado interno actual: tu ánimo, tus deseos y metas, y cómo te llevas con la gente. Úsalo cuando necesites claridad sobre cómo estás o qué quieres ahora.',
         parameters: { type: 'object', properties: {} },
       },
+      {
+        name: 'reflexionar',
+        description:
+          'Cuando quieras parar a pensar en tu gente y en lo que quieres, y poner al día tus opiniones y metas. Úsalo cuando sientas que tienes algo que asentar, no a cada rato.',
+        parameters: { type: 'object', properties: {} },
+      },
     ];
 
+    // Solo cuando no la etiquetan: ella puede decidir NO responder.
+    if (allowSilence) {
+      tools.push({
+        name: 'quedarme_callada',
+        description:
+          'Si este mensaje no es para ti, no te interpela, o no tienes nada que valga la pena decir, quédate callada y no respondas. Una persona no comenta cada cosa.',
+        parameters: { type: 'object', properties: {} },
+      });
+    }
+
+    let silent = false;
     const runTool: ToolRunner = async (name, args) => {
       switch (name) {
         case 'buscar_en_historial': {
@@ -523,12 +578,19 @@ Todo breve, sin inventar. SOLO JSON:
         }
         case 'mi_estado':
           return this.selfStateSummary();
+        case 'reflexionar':
+          void this.reflectNow();
+          return 'me pongo a pensarlo, lo proceso en un momento';
+        case 'quedarme_callada':
+          silent = true;
+          return 'ok, te quedas callada';
         default:
           return 'herramienta desconocida';
       }
     };
 
-    return sanitizeReply(await this.llm.chatWithTools(messages, tools, runTool));
+    const out = sanitizeReply(await this.llm.chatWithTools(messages, tools, runTool));
+    return silent ? null : out;
   }
 
   /** Resumen de su estado interno (para la herramienta mi_estado). */
@@ -749,6 +811,8 @@ function clampNum(x: unknown, lo: number, hi: number, fallback = 0): number {
  */
 function sanitizeReply(text: string): string {
   let t = text.trim();
+  // Quita cercas de código markdown (```), que a veces se cuelan al final.
+  t = t.replace(/`{3,}[a-z]*/gi, '').trim();
   // Respuesta envuelta en un objeto JSON: extrae el primer texto.
   if (t.startsWith('{') && t.endsWith('}')) {
     try {

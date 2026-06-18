@@ -128,29 +128,24 @@ export class DiscordBody {
       this.client.user != null && msg.mentions.has(this.client.user);
     const explicitlyDirect = mentioned || replyingToHer;
 
-    // Si la etiquetan o responden a un mensaje suyo, es directo y seguro.
-    // Si no, la mente decide: responder / esperar / ignorar, y de paso si el
-    // mensaje le hablaba a ella (aunque sin etiquetar) para contestar ágil.
-    let direct = explicitlyDirect;
-    if (!explicitlyDirect) {
-      const decision = await this.mind.decideTurn(perception);
-      if (!decision.respond) {
-        this.mind.observe(perception); // contexto inmediato (memoria de trabajo)
-        // Aunque no conteste, recuerda lo que se dijo (estuvo presente leyendo).
-        void this.mind
-          .remember(perception)
-          .catch((err) => console.error('Error guardando recuerdo:', err));
-        this.armIdle(msg); // por si la conversación se queda muerta
-        return;
-      }
-      direct = decision.directed;
+    // Ruido trivial (1-2 caracteres): no vale invocar al modelo, solo lo observa.
+    if (!explicitlyDirect && msg.content.trim().length < 3) {
+      this.mind.observe(perception);
+      void this.mind.remember(perception).catch(() => {});
+      this.armIdle(msg);
+      return;
     }
 
     try {
-      const reply = await this.mind.respondTo(perception);
-      await this.typeLikeAHuman(msg, reply, direct);
-      await this.deliver(msg, reply);
-      this.logSamara(perception.channelId, reply);
+      // Si la etiquetan/responden, contesta. Si no, ELLA decide si entra o se
+      // queda callada (allowSilence): no hay un clasificador externo decidiendo.
+      const reply = await this.mind.respondTo(perception, { allowSilence: !explicitlyDirect });
+      if (reply) {
+        await this.typeLikeAHuman(msg, reply, explicitlyDirect);
+        await this.deliver(msg, reply);
+        this.logSamara(perception.channelId, reply);
+      }
+      // Si reply es null, se quedó callada (ya recordó lo que vio).
     } catch (err) {
       console.error('Error generando respuesta:', err);
     } finally {

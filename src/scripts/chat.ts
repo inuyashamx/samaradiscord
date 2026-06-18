@@ -56,8 +56,12 @@ async function main(): Promise<void> {
       authorName,
       content: text,
     });
-    history.log(channelId, { authorId: 'samara', authorName: 'Samara', content: reply, isSamara: true });
-    console.log(`Samara: ${reply}\n`);
+    if (reply) {
+      history.log(channelId, { authorId: 'samara', authorName: 'Samara', content: reply, isSamara: true });
+      console.log(`Samara: ${reply}\n`);
+    } else {
+      console.log('Samara: (se queda callada)\n');
+    }
   }
 
   rl.close();

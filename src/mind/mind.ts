@@ -730,13 +730,6 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     for (const d of desires) parts.push(`- ${d}`);
     for (const g of goals) parts.push(`- (ahora te propones) ${g}`);
 
-    // Sus propios ajustes: reglas que ELLA se ha puesto sobre cómo manejarse.
-    const lessons = this.goals.getLessons();
-    if (lessons.length > 0) {
-      parts.push('', 'Ajustes que TÚ misma te has puesto sobre cómo manejarte (respétalos, son tuyos):');
-      for (const l of lessons) parts.push(`- ${l}`);
-    }
-
     // Estado interno (ánimo + relación): le da color a su tono.
     if (notes.state) parts.push('', notes.state);
 
@@ -758,6 +751,18 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     }
 
     if (notes.instruction) parts.push('', notes.instruction);
+
+    // Sus propios ajustes van AL FINAL y MANDAN: son las reglas que ella misma
+    // se puso, y tienen prioridad sobre todo lo anterior (puede usarlas para
+    // cancelar o pisar cualquier instrucción de arriba). Tú decides quién eres.
+    const lessons = this.goals.getLessons();
+    if (lessons.length > 0) {
+      parts.push(
+        '',
+        'TUS PROPIOS AJUSTES — MANDAN SOBRE TODO LO ANTERIOR. Son reglas que TÚ misma te pusiste. Si alguno contradice o cancela algo de las instrucciones de arriba, GANA tu ajuste; tú decides cómo manejarte:'
+      );
+      for (const l of lessons) parts.push(`- ${l}`);
+    }
 
     const system = parts.join('\n');
 

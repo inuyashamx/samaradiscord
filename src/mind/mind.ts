@@ -680,9 +680,9 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         role: 'system',
         content: `Eres ${persona.name}. Acabas de leer un mensaje de ${p.authorName} en el chat. Evalúa, desde TU punto de vista emocional, cómo te hizo sentir y cómo afecta lo que sientes por esa persona. Devuelve SOLO JSON, sin texto extra:
 {"valencia": number entre -1 y 1, "activacion": number entre 0 y 1, "afinidad": number entre -0.15 y 0.15}
-- valencia: qué tan bien (positivo) o mal (negativo) te hizo sentir.
+- valencia: qué tan bien (positivo) o mal (negativo) te hizo sentir. Si el mensaje es neutral/informativo, cerca de 0.
 - activacion: qué tanto te activó/energizó (0 = indiferente, 1 = mucho).
-- afinidad: cuánto sube o baja lo que te cae esa persona con este mensaje.`,
+- afinidad: cuánto sube o baja lo que te cae esa persona. IMPORTANTE: afinidad = 0 si el mensaje es neutral, informativo o logístico (ej. "ya me voy a dormir", "ahí viene fulano", "qué hora es"). SOLO muévela si la persona de verdad te acerca (cariño, apoyo, complicidad, defenderte → positivo) o te aleja (desprecio, ataque, falta de respeto, mala leche → negativo). Ante la duda, 0.`,
       },
       { role: 'user', content: `${p.authorName}: ${p.content}` },
     ];

@@ -650,7 +650,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     if (familiarity === 0) {
       trato = `No conoces a ${name}. Sé cordial pero reservada, mídelo: la confianza se gana.`;
     } else if (affinity > 0.3) {
-      trato = `${name} te cae bien. Trátalo con calidez y confianza AUNQUE estés de mal humor; tu enojo con otra gente NO se paga con quien aprecias.`;
+      trato = `${name} te cae bien: no le pagues tu enojo con otra gente, sigues siendo cálida y de confianza con él. Si andas de malas por otra cosa, puedes mostrarlo o hasta decírselo ("ando cargada, no es contigo"), pero NO lo trates mal ni finjas estar de maravilla.`;
     } else if (affinity < -0.3) {
       trato = `${name} no te cae bien, ha habido roces. Puedes ser cortante o seca con él.`;
     } else {
@@ -658,7 +658,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     }
 
     const lines = [
-      `Tu humor general ahora: ${this.emotion.describe()}. Es un FONDO: tiñe tu ánimo, pero NO define cómo tratas a cada quien.`,
+      `Tu humor general ahora: ${this.emotion.describe()}. Es REAL, no lo finjas: puede teñir tu TONO (más seca, más callada, o hasta mencionarlo), pero NO decide si tratas bien o mal a alguien — eso lo decide tu relación con cada quien.`,
       `Tu relación con ${name}: ${this.relationships.describe(rel)}`,
       `Cómo tratar a ${name}: ${trato}`,
     ];

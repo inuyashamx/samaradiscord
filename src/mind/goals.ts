@@ -2,6 +2,7 @@ import { openDb, type DB } from './db.js';
 
 const MAX_GOALS = 5;
 const MAX_DESIRES = 8;
+const MAX_LESSONS = 8;
 
 /**
  * El "yo en movimiento" de Samara: lo que se propone (metas) y lo que le importa
@@ -72,6 +73,25 @@ export class Goals {
   /** Reemplaza el set completo de deseos (lo usa la reflexión al revisarlos). */
   setDesires(desires: string[]): void {
     this.write('desires', dedup(desires).slice(0, MAX_DESIRES));
+  }
+
+  // --- Ajustes (reglas que ELLA se pone sobre cómo manejarse/leer las cosas) ---
+  getLessons(): string[] {
+    return this.read('lessons');
+  }
+  addLesson(lesson: string): void {
+    const l = lesson.trim();
+    if (!l) return;
+    const cur = this.getLessons();
+    if (cur.some((x) => similar(x, l))) return;
+    this.write('lessons', [...cur, l].slice(0, MAX_LESSONS));
+  }
+  removeLesson(lesson: string): void {
+    this.write('lessons', this.getLessons().filter((x) => !similar(x, lesson)));
+  }
+  /** Reemplaza el set completo de ajustes (lo usa la reflexión al revisarlos). */
+  setLessons(lessons: string[]): void {
+    this.write('lessons', dedup(lessons).slice(0, MAX_LESSONS));
   }
 
   private read(key: string): string[] {

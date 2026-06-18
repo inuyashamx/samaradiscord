@@ -64,6 +64,11 @@ function main(): void {
   console.log(`   metas que se ha propuesto (${metas.length}):`);
   if (metas.length === 0) console.log('     (aún no se ha propuesto nada concreto)');
   else for (const g of metas) console.log(`     › ${g}`);
+  const lessons = goals.getLessons();
+  if (lessons.length > 0) {
+    console.log(`   ajustes que se ha puesto (${lessons.length}):`);
+    for (const l of lessons) console.log(`     ~ ${l}`);
+  }
   console.log('');
 
   // Opiniones propias (reflexiones)

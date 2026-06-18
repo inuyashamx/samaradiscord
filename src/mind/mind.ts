@@ -306,28 +306,34 @@ export class Mind {
     const priorDesires = this.goals.getDesires();
     const desiresText = priorDesires.length ? priorDesires.map((d) => `- ${d}`).join('\n') : '(ninguno)';
 
+    // Sus ajustes actuales: reglas que se puso sobre cómo manejarse.
+    const priorLessons = this.goals.getLessons();
+    const lessonsText = priorLessons.length ? priorLessons.map((l) => `- ${l}`).join('\n') : '(ninguno)';
+
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: `Eres ${persona.name}. Vas a repasar en silencio a tu gente, como una persona que piensa al final del día, y ACTUALIZAR tres cosas: tus opiniones, tus metas y tus deseos. Te doy lo de antes y lo que ha pasado hace poco. Reglas:
+        content: `Eres ${persona.name}. Vas a repasar en silencio a tu gente, como una persona que piensa al final del día, y ACTUALIZAR cuatro cosas: tus opiniones, tus metas, tus deseos y tus ajustes. Te doy lo de antes y lo que ha pasado hace poco. Reglas:
 - OPINIONES: mantén las que siguen valiendo, CAMBIA o descarta las que ya no aplican (la gente cambia y tú también; no te aferres a una primera impresión), agrega nuevas si surgen. Cada cosa va con QUIEN la dijo o hizo; NO mezcles a una persona con otra ni le cuelgues a alguien lo de otro.
-- METAS: lo que TÚ quieres lograr ahora (1 a 3), concreto y con tu carácter (ej. "que dejen de probarme y me tomen en serio", "ganarme a fulano"). Mantén las vivas, descarta las cumplidas o muertas, agrega nuevas según lo que vives.
-- DESEOS: lo que te importa a un nivel PROFUNDO (lo que te mueve en la vida). Son estables: casi SIEMPRE se mantienen. Solo evoluciónalos si algo de verdad te marcó (lo cumpliste, cambiaste, o descubriste que algo te importa más). NO los reescribas por reescribir; con tu experiencia pueden ir volviéndose más tuyos y menos "de manual".
+- METAS: lo que TÚ quieres lograr ahora (1 a 3), concreto y con tu carácter. Mantén las vivas, descarta las cumplidas o muertas, agrega nuevas según lo que vives.
+- DESEOS: lo que te importa a un nivel PROFUNDO. Son estables: casi SIEMPRE se mantienen. Solo evoluciónalos si algo de verdad te marcó; no los reescribas por reescribir.
+- AJUSTES: reglas que TÚ te pones sobre cómo manejarte o leer las cosas (ej. "ubico de quién viene una emoción antes de reaccionar", "con desconocidos mido más"). Si te diste cuenta de algo sobre ti, anótalo; suelta los que ya no necesites. Así te vas afinando tú sola.
 Todo breve, en primera persona, sin inventar. SOLO JSON:
-{"reflexiones": ["...", "..."], "metas": ["...", "..."], "deseos": ["...", "..."]}`,
+{"reflexiones": ["..."], "metas": ["..."], "deseos": ["..."], "ajustes": ["..."]}`,
       },
       {
         role: 'user',
-        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nTus deseos de antes:\n${desiresText}\n\nLo que ha pasado hace poco:\n${material}`,
+        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nTus deseos de antes:\n${desiresText}\n\nTus ajustes de antes:\n${lessonsText}\n\nLo que ha pasado hace poco:\n${material}`,
       },
     ];
 
-    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 600 });
-    const { reflexiones: ideas, metas, deseos } = parseReflectionUpdate(raw);
+    const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 700 });
+    const { reflexiones: ideas, metas, deseos, ajustes } = parseReflectionUpdate(raw);
 
-    // Actualiza metas y deseos si sacó algo (si no, conserva los de antes).
+    // Actualiza metas, deseos y ajustes si sacó algo (si no, conserva los de antes).
     if (metas.length > 0) this.goals.set(metas);
     if (deseos.length > 0) this.goals.setDesires(deseos);
+    if (ajustes.length > 0) this.goals.setLessons(ajustes);
 
     if (ideas.length === 0) return []; // si no sacó opiniones, conserva las de antes
 
@@ -441,6 +447,16 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           'Cuando quieras parar a pensar en tu gente y en lo que quieres, y poner al día tus opiniones y metas. Úsalo cuando sientas que tienes algo que asentar, no a cada rato.',
         parameters: { type: 'object', properties: {} },
       },
+      {
+        name: 'ajustarme',
+        description:
+          'Cuando te das cuenta de algo sobre CÓMO quieres manejarte o leer las cosas (un ajuste tuyo, ej: "antes de reaccionar fuerte, ubico bien de quién viene la emoción" o "con desconocidos mido más"), apúntalo. Lo tendrás presente de aquí en adelante. Es tu forma de irte afinando tú sola.',
+        parameters: {
+          type: 'object',
+          properties: { ajuste: { type: 'string', description: 'El ajuste/regla tuya, breve y en primera persona.' } },
+          required: ['ajuste'],
+        },
+      },
     ];
 
     // Solo cuando no la etiquetan: ella puede decidir NO responder.
@@ -487,6 +503,9 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         case 'reflexionar':
           void this.reflectNow();
           return 'me pongo a pensarlo, lo proceso en un momento';
+        case 'ajustarme':
+          this.goals.addLesson(String(args.ajuste ?? ''));
+          return 'anotado, lo tendré presente';
         case 'quedarme_callada':
           silent = true;
           return 'ok, te quedas callada';
@@ -633,6 +652,13 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     for (const d of desires) parts.push(`- ${d}`);
     for (const g of goals) parts.push(`- (ahora te propones) ${g}`);
 
+    // Sus propios ajustes: reglas que ELLA se ha puesto sobre cómo manejarse.
+    const lessons = this.goals.getLessons();
+    if (lessons.length > 0) {
+      parts.push('', 'Ajustes que TÚ misma te has puesto sobre cómo manejarte (respétalos, son tuyos):');
+      for (const l of lessons) parts.push(`- ${l}`);
+    }
+
     // Estado interno (ánimo + relación): le da color a su tono.
     if (notes.state) parts.push('', notes.state);
 
@@ -725,6 +751,7 @@ function parseReflectionUpdate(raw: string): {
   reflexiones: string[];
   metas: string[];
   deseos: string[];
+  ajustes: string[];
 } {
   try {
     const match = raw.match(/\{[\s\S]*\}/);
@@ -733,17 +760,19 @@ function parseReflectionUpdate(raw: string): {
         reflexiones?: unknown;
         metas?: unknown;
         deseos?: unknown;
+        ajustes?: unknown;
       };
       return {
         reflexiones: stringArray(obj.reflexiones).slice(0, 6),
         metas: stringArray(obj.metas).slice(0, 3),
         deseos: stringArray(obj.deseos).slice(0, 6),
+        ajustes: stringArray(obj.ajustes).slice(0, 8),
       };
     }
   } catch {
     // cae al fallback
   }
-  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [] };
+  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [], ajustes: [] };
 }
 
 /**

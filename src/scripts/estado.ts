@@ -56,10 +56,15 @@ function main(): void {
 
   // Deseos (fijos) y metas (dinámicas)
   console.log('🎯  LO QUE LA MUEVE');
-  console.log('   deseos (fijos):');
+  console.log('   deseos (de su canon):');
   for (const d of persona.desires) console.log(`     · ${d}`);
+  const propios = goals.getDesires();
+  if (propios.length > 0) {
+    console.log('   deseos que ella ha desarrollado:');
+    for (const d of propios) console.log(`     · ${d}`);
+  }
   const metas = goals.get();
-  console.log(`   metas ahora (${metas.length}):`);
+  console.log(`   metas que se ha propuesto (${metas.length}):`);
   if (metas.length === 0) console.log('     (aún no se ha propuesto nada concreto)');
   else for (const g of metas) console.log(`     › ${g}`);
   console.log('');

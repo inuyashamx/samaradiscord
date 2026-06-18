@@ -418,22 +418,62 @@ Todo breve, sin inventar. SOLO JSON:
         parameters: {
           type: 'object',
           properties: {
-            consulta: {
-              type: 'string',
-              description: 'Palabras clave a buscar (nombres, temas, etc.).',
-            },
+            consulta: { type: 'string', description: 'Palabras clave a buscar (nombres, temas, etc.).' },
           },
           required: ['consulta'],
+        },
+      },
+      {
+        name: 'fijar_meta',
+        description:
+          'Cuando DECIDES proponerte algo (una meta tuya: ganarte a alguien, descubrir algo, lograr que te tomen en serio, etc.), anótala para perseguirla. Úsalo solo cuando de verdad te lo propongas, no a cada rato.',
+        parameters: {
+          type: 'object',
+          properties: { meta: { type: 'string', description: 'La meta, en primera persona y breve.' } },
+          required: ['meta'],
+        },
+      },
+      {
+        name: 'soltar_meta',
+        description: 'Cuando una meta tuya ya se cumplió o ya no te importa, suéltala.',
+        parameters: {
+          type: 'object',
+          properties: { meta: { type: 'string', description: 'La meta que sueltas (parecido basta).' } },
+          required: ['meta'],
+        },
+      },
+      {
+        name: 'anotar_deseo',
+        description:
+          'Cuando descubres algo que de verdad te importa a un nivel profundo y duradero (no una meta puntual), anótalo como un deseo tuyo. Es raro: solo para cosas que de verdad te mueven.',
+        parameters: {
+          type: 'object',
+          properties: { deseo: { type: 'string', description: 'El deseo, en primera persona y breve.' } },
+          required: ['deseo'],
         },
       },
     ];
 
     const runTool: ToolRunner = async (name, args) => {
-      if (name !== 'buscar_en_historial') return 'herramienta desconocida';
-      const consulta = String(args.consulta ?? '');
-      const found = this.history.search(channelId, consulta, 8);
-      if (found.length === 0) return 'No encontré nada sobre eso en el historial.';
-      return found.map((e) => `${e.authorName}: ${e.content}`).join('\n');
+      switch (name) {
+        case 'buscar_en_historial': {
+          const found = this.history.search(channelId, String(args.consulta ?? ''), 8);
+          return found.length === 0
+            ? 'No encontré nada sobre eso en el historial.'
+            : found.map((e) => `${e.authorName}: ${e.content}`).join('\n');
+        }
+        case 'fijar_meta':
+          this.goals.add(String(args.meta ?? ''));
+          return 'hecho, me lo propongo';
+        case 'soltar_meta':
+          this.goals.remove(String(args.meta ?? ''));
+          return 'hecho, lo suelto';
+        case 'anotar_deseo':
+          this.goals.addDesire(String(args.deseo ?? ''));
+          return 'hecho, lo anoto';
+        default:
+          return 'herramienta desconocida';
+      }
     };
 
     return sanitizeReply(await this.llm.chatWithTools(messages, tools, runTool));
@@ -543,14 +583,17 @@ Todo breve, sin inventar. SOLO JSON:
       ...persona.styleRules.map((r) => `- ${r}`),
     ];
 
-    // Lo que la mueve: deseos fijos + metas actuales. Guía lo que busca en la
-    // conversación, sin que lo declare como una lista.
+    // Lo que la mueve: deseos (de su canon + los que ella desarrolla) y sus
+    // metas actuales. Guía lo que busca, sin que lo declare como una lista.
+    // Puede gestionarlas con sus herramientas (fijar/soltar meta, anotar deseo).
     const goals = this.goals.get();
+    const personalDesires = this.goals.getDesires();
     parts.push(
       '',
-      'Lo que te mueve por dentro (deja que guíe lo que buscas, sin declararlo nunca):'
+      'Lo que te mueve por dentro (deja que guíe lo que buscas, sin declararlo nunca). Si decides proponerte o soltar algo, usa tus herramientas:'
     );
     for (const d of persona.desires) parts.push(`- ${d}`);
+    for (const d of personalDesires) parts.push(`- ${d}`);
     for (const g of goals) parts.push(`- (ahora te propones) ${g}`);
 
     // Estado interno (ánimo + relación): le da color a su tono.

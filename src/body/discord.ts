@@ -110,6 +110,11 @@ export class DiscordBody {
         ? msg.mentions.members?.get(repliedUser.id)?.displayName ?? repliedUser.username
         : undefined;
 
+    // A quién ETIQUETA el mensaje, sin contar a Samara (señal de para quién es).
+    const mentionsOthers = [...msg.mentions.users.values()]
+      .filter((u) => u.id !== botId)
+      .map((u) => msg.mentions.members?.get(u.id)?.displayName ?? u.username);
+
     const authorName = msg.member?.displayName ?? msg.author.username;
     const perception: Perception = {
       channelId: msg.channelId,
@@ -118,6 +123,7 @@ export class DiscordBody {
       content: resolveMentions(msg), // <@id> -> @Nombre (si no, el modelo se confunde)
       isDev: this.isDev(msg.author.id, authorName, msg.author.username),
       replyTo: replyToOther, // si le responde a otra persona, no a Samara
+      mentionsOthers: mentionsOthers.length ? mentionsOthers : undefined,
     };
 
     // Historial crudo: registra TODO lo que se dice (sustrato completo).

@@ -18,6 +18,8 @@ export interface Perception {
   isDev?: boolean;
   /** Si el mensaje responde a OTRA persona (no a Samara), su nombre. */
   replyTo?: string;
+  /** Otras personas etiquetadas (@) en el mensaje, que no son Samara. */
+  mentionsOthers?: string[];
 }
 
 /** Cuántos recuerdos de largo plazo recuperar por respuesta. */
@@ -186,6 +188,9 @@ export class Mind {
         'Este mensaje NO te etiqueta a ti. Decide tú: si te interpela, te interesa o tienes algo que aportar, responde con naturalidad. Si no es para ti o no aporta nada, usa tu herramienta quedarme_callada y no digas nada. Una persona no comenta cada cosa.';
       if (p.replyTo) {
         instruction += ` Ojo: este mensaje le responde a ${p.replyTo}, no a ti; casi seguro no es contigo.`;
+      }
+      if (p.mentionsOthers && p.mentionsOthers.length > 0) {
+        instruction += ` IMPORTANTE: este mensaje ETIQUETA a ${p.mentionsOthers.join(', ')} (no a ti). Va dirigido a esa persona, así que NO contestes tú y JAMÁS respondas en su lugar como si te lo preguntaran a ti: usa quedarme_callada, salvo que el mensaje también te hable a TI claramente.`;
       }
     }
 

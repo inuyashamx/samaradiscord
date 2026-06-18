@@ -98,9 +98,16 @@ export class MemoryStore {
     return Number(id);
   }
 
-  /** Recupera los k recuerdos más cercanos semánticamente al embedding dado. */
+  /**
+   * Recupera los k recuerdos más relevantes. No ordena solo por parecido
+   * (similitud): puntúa cada candidato combinando RELEVANCIA + RECENCIA +
+   * IMPORTANCIA (como en Generative Agents), para que lo útil suba antes que el
+   * ruido viejo que solo "suena" parecido.
+   */
   recall(embedding: number[], k = 5): RetrievedMemory[] {
-    const rows = this.db
+    // 1) Trae un set amplio de candidatos por parecido.
+    const candidateLimit = Math.max(k * 4, 30);
+    const cand = this.db
       .prepare(
         `SELECT m.id AS id, m.channel_id AS channelId, m.author_name AS authorName,
                 m.content AS content, m.kind AS kind, m.importance AS importance,
@@ -112,11 +119,31 @@ export class MemoryStore {
            ORDER BY distance
            LIMIT ?
          ) v
-         JOIN memories m ON m.id = v.id
-         ORDER BY v.distance`
+         JOIN memories m ON m.id = v.id`
       )
-      .all(JSON.stringify(embedding), k) as RetrievedMemory[];
-    return rows;
+      .all(JSON.stringify(embedding), candidateLimit) as RetrievedMemory[];
+
+    if (cand.length <= k) {
+      return cand.sort((a, b) => a.distance - b.distance);
+    }
+
+    // 2) Re-puntúa: relevancia (parecido) + recencia + importancia.
+    const now = Date.now();
+    const dists = cand.map((c) => c.distance);
+    const minD = Math.min(...dists);
+    const span = Math.max(...dists) - minD || 1;
+
+    const scored = cand.map((c) => {
+      const relevance = (Math.max(...dists) - c.distance) / span; // 0..1 (1 = más cercano)
+      const ageDays = (now - c.createdAt) / 86_400_000;
+      const recency = Math.exp(-ageDays / 14); // ~2 semanas de vida media
+      const importance = Math.min(c.importance, 10) / 10;
+      const score = 1.0 * relevance + 0.3 * recency + 0.5 * importance;
+      return { c, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, k).map((s) => s.c);
   }
 
   /** Recupera los recuerdos más recientes (orden cronológico), opcionalmente por tipo. */

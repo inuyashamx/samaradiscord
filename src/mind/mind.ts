@@ -1,7 +1,7 @@
 import { persona, type PresenceContext } from './persona.js';
 import { config } from '../config.js';
 import { ShortTermMemory, type Turn } from './short-term-memory.js';
-import { MemoryStore, type RetrievedMemory } from './memory.js';
+import { MemoryStore, type RetrievedMemory, type RecallContext } from './memory.js';
 import { Relationships } from './relationships.js';
 import { EmotionState } from './emotion.js';
 import { ChatHistory } from './history.js';
@@ -17,16 +17,6 @@ export interface Perception {
   isDev?: boolean;
   /** Si el mensaje responde a OTRA persona (no a Samara), su nombre. */
   replyTo?: string;
-}
-
-export type TurnAction = 'responder' | 'esperar' | 'ignorar';
-
-export interface TurnDecision {
-  /** Si Samara debe contestar ahora. */
-  respond: boolean;
-  /** Si el mensaje le hablaba directamente a ella (aunque sin etiquetar). */
-  directed: boolean;
-  action: TurnAction;
 }
 
 /** Cuántos recuerdos de largo plazo recuperar por respuesta. */
@@ -73,107 +63,6 @@ export class Mind {
       content: p.content,
       isSamara,
     });
-  }
-
-  /**
-   * Decide qué hace Samara con un mensaje que NO la etiqueta. Como una persona
-   * real que está en el chat, elige entre:
-   *   - responder: le hablan a ella (aunque no la etiqueten) o quiere meterse.
-   *   - esperar:   la cosa va hacia ella pero aún no es su turno; deja pasar.
-   *   - ignorar:   no hablan con ella / no aporta nada.
-   *
-   * Clave: detecta cuando le hablan IMPLÍCITAMENTE. Si en el chat prácticamente
-   * solo están ella y otra persona, casi todo va dirigido a ella.
-   *
-   * NO modifica la memoria (es solo una decisión).
-   */
-  async decideTurn(p: Perception): Promise<TurnDecision> {
-    const text = p.content.trim();
-    if (text.length < 2) return { respond: false, directed: false, action: 'ignorar' };
-
-    // Si dicen su nombre (aunque no la etiqueten), claramente va con ella.
-    if (/\bsamara\b/i.test(text)) {
-      return { respond: true, directed: true, action: 'responder' };
-    }
-
-    const decision = await this.classifyTurn(p);
-
-    // Anti-cadena: si NO le hablan directo y acaba de hablar, deja pasar el
-    // turno aunque el tema le interese (evita monopolizar en grupo).
-    if (
-      decision.action === 'responder' &&
-      !decision.directed &&
-      this.turnsSinceSamaraSpoke(p.channelId) < config.behavior.ambientMinGap
-    ) {
-      return { respond: false, directed: false, action: 'esperar' };
-    }
-
-    return decision;
-  }
-
-  /** Un modelo chico clasifica el turno mirando el contexto y los participantes. */
-  private async classifyTurn(p: Perception): Promise<TurnDecision> {
-    const recent = this.stm.recent(p.channelId).slice(-10);
-    const transcript = recent
-      .map((t) => (t.isSamara ? `Samara: ${t.content}` : `${t.authorName}: ${t.content}`))
-      .join('\n');
-
-    // ¿Con quién está hablando? Si solo hay otra persona, casi todo es para ella.
-    const others = new Set(recent.filter((t) => !t.isSamara).map((t) => t.authorName));
-    others.add(p.authorName);
-    const soloConEsta = others.size <= 1;
-
-    // Con la gente que le cae bien tiende a engancharse más.
-    const rel = this.relationships.get(p.authorId);
-    const relNote = `Tu relación con ${p.authorName}: ${this.relationships.describe(rel)}`;
-
-    // ¿Le está hablando a otra persona? Señal fuerte de que NO es para Samara.
-    const dirigidoAOtro = p.replyTo
-      ? `OJO: este mensaje le RESPONDE a ${p.replyTo}, no a ti. Casi seguro NO es para ti.`
-      : '';
-
-    const messages: ChatMessage[] = [
-      {
-        role: 'system',
-        content: `Eres ${persona.name}, una persona en un chat de Discord. Decide qué harías con el ÚLTIMO mensaje, eligiendo una acción:
-- "responder": te están hablando a TI (aunque no te etiqueten) o te dan ganas de meterte porque es natural/relevante.
-- "esperar": la conversación va hacia ti pero todavía no es tu turno; mejor dejar pasar hasta ser relevante.
-- "ignorar": no hablan contigo y no aportarías nada.
-
-Reglas:
-- Si en el chat prácticamente solo están tú y otra persona, casi todo lo que dice esa persona va dirigido a ti: normalmente "responder".
-- Si le están hablando o preguntando a OTRA persona (no a ti), NO contestes tú, aunque el tema sea SOBRE ti: deja que esa persona responda. Eso es "ignorar". Ej: si alguien le pregunta a otro "donde vive samara?", no respondas tú, no es tu turno.
-- En grupo no comentas cada mensaje, pero NO eres pasiva: si el tema te interesa de verdad y NO se lo están preguntando a alguien más, puedes meterte ("responder").
-- Si de plano no te aporta ni va contigo, "ignorar" o "esperar".
-- "dirigido" = true SOLO si el mensaje claramente te habla o te pregunta a TI.
-
-Responde SOLO con JSON, sin texto extra:
-{"dirigido": true|false, "accion": "responder"|"esperar"|"ignorar"}`,
-      },
-      {
-        role: 'user',
-        content: `${soloConEsta ? '(En este chat prácticamente solo están Samara y esta persona.)\n' : ''}${dirigidoAOtro ? dirigidoAOtro + '\n' : ''}${relNote}\n\nConversación reciente:\n${transcript || '(vacío)'}\n\nÚltimo mensaje:\n${p.authorName}: ${p.content}`,
-      },
-    ];
-
-    const raw = await this.llm.chat(messages, {
-      model: config.openai.decisionModel,
-      temperature: 0.2,
-      maxTokens: 30,
-    });
-
-    return parseDecision(raw);
-  }
-
-  /** Nº de mensajes de otros desde la última vez que habló Samara. */
-  private turnsSinceSamaraSpoke(channelId: string): number {
-    const recent = this.stm.recent(channelId);
-    let n = 0;
-    for (let i = recent.length - 1; i >= 0; i--) {
-      if (recent[i].isSamara) break;
-      n++;
-    }
-    return n;
   }
 
   /**
@@ -268,7 +157,11 @@ Responde SOLO con JSON, sin texto extra:
       this.llm.embed(contextText || p.content),
       this.llm.embed(p.content),
     ]);
-    const recalled = safeRecall(this.memory, contextEmbedding, RECALL_K);
+    // Prioriza recuerdos de ESTA persona y ESTE canal (no cruzar conversaciones).
+    const recalled = safeRecall(this.memory, contextEmbedding, RECALL_K, {
+      authorId: p.authorId,
+      channelId: p.channelId,
+    });
 
     // Su tono refleja su ánimo actual y cómo se lleva con esta persona.
     const rel = this.relationships.get(p.authorId);
@@ -414,7 +307,7 @@ Responde SOLO con JSON, sin texto extra:
       {
         role: 'system',
         content: `Eres ${persona.name}. Vas a repasar en silencio a tu gente, como una persona que piensa al final del día, y ACTUALIZAR tres cosas: tus opiniones, tus metas y tus deseos. Te doy lo de antes y lo que ha pasado hace poco. Reglas:
-- OPINIONES: mantén las que siguen valiendo, CAMBIA o descarta las que ya no aplican (la gente cambia y tú también; no te aferres a una primera impresión), agrega nuevas si surgen.
+- OPINIONES: mantén las que siguen valiendo, CAMBIA o descarta las que ya no aplican (la gente cambia y tú también; no te aferres a una primera impresión), agrega nuevas si surgen. Cada cosa va con QUIEN la dijo o hizo; NO mezcles a una persona con otra ni le cuelgues a alguien lo de otro.
 - METAS: lo que TÚ quieres lograr ahora (1 a 3), concreto y con tu carácter (ej. "que dejen de probarme y me tomen en serio", "ganarme a fulano"). Mantén las vivas, descarta las cumplidas o muertas, agrega nuevas según lo que vives.
 - DESEOS: lo que te importa a un nivel PROFUNDO (lo que te mueve en la vida). Son estables: casi SIEMPRE se mantienen. Solo evoluciónalos si algo de verdad te marcó (lo cumpliste, cambiaste, o descubriste que algo te importa más). NO los reescribas por reescribir; con tu experiencia pueden ir volviéndose más tuyos y menos "de manual".
 Todo breve, en primera persona, sin inventar. SOLO JSON:
@@ -576,7 +469,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           return 'hecho, lo suelto';
         case 'recordar': {
           const emb = await this.llm.embed(String(args.tema ?? ''));
-          const found = safeRecall(this.memory, emb, 10);
+          const found = safeRecall(this.memory, emb, 10, { channelId });
           if (found.length === 0) return 'no me viene nada claro sobre eso';
           return found
             .map((m) => (m.kind === 'reflection' ? `(piensas) ${m.content}` : `${m.authorName}: ${m.content}`))
@@ -739,7 +632,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     if (recalled.length > 0) {
       parts.push(
         '',
-        'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado):'
+        'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado). OJO: son de DISTINTAS personas y momentos; NO le atribuyas a quien te habla ahora lo que dijo o hizo otra persona:'
       );
       for (const m of recalled) {
         // Las reflexiones son conclusiones suyas; los episodios, cosas que se dijeron.
@@ -762,24 +655,6 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
 
     return [{ role: 'system', content: system }, ...history];
   }
-}
-
-/** Parsea el JSON de la decisión de turno; ante cualquier fallo, ignora. */
-function parseDecision(raw: string): TurnDecision {
-  try {
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (match) {
-      const obj = JSON.parse(match[0]) as { dirigido?: boolean; accion?: string };
-      const action: TurnAction =
-        obj.accion === 'responder' || obj.accion === 'esperar' || obj.accion === 'ignorar'
-          ? obj.accion
-          : 'ignorar';
-      return { respond: action === 'responder', directed: obj.dirigido === true, action };
-    }
-  } catch {
-    // cae al default
-  }
-  return { respond: false, directed: false, action: 'ignorar' };
 }
 
 interface Appraisal {
@@ -925,10 +800,11 @@ function parseReflections(raw: string, max = 4): string[] {
 function safeRecall(
   memory: MemoryStore,
   embedding: number[],
-  k: number
+  k: number,
+  ctx: RecallContext = {}
 ): RetrievedMemory[] {
   try {
-    return memory.recall(embedding, k);
+    return memory.recall(embedding, k, ctx);
   } catch {
     return [];
   }

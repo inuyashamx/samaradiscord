@@ -32,12 +32,19 @@ export interface MemoryRecord {
 export interface RetrievedMemory {
   id: number;
   channelId: string;
+  authorId: string;
   authorName: string;
   content: string;
   kind: MemoryKind;
   importance: number;
   createdAt: number;
   distance: number;
+}
+
+/** Pistas de contexto para priorizar recuerdos de la persona/canal actual. */
+export interface RecallContext {
+  authorId?: string;
+  channelId?: string;
 }
 
 /**
@@ -104,14 +111,14 @@ export class MemoryStore {
    * IMPORTANCIA (como en Generative Agents), para que lo útil suba antes que el
    * ruido viejo que solo "suena" parecido.
    */
-  recall(embedding: number[], k = 5): RetrievedMemory[] {
+  recall(embedding: number[], k = 5, ctx: RecallContext = {}): RetrievedMemory[] {
     // 1) Trae un set amplio de candidatos por parecido.
     const candidateLimit = Math.max(k * 4, 30);
     const cand = this.db
       .prepare(
-        `SELECT m.id AS id, m.channel_id AS channelId, m.author_name AS authorName,
-                m.content AS content, m.kind AS kind, m.importance AS importance,
-                m.created_at AS createdAt, v.distance AS distance
+        `SELECT m.id AS id, m.channel_id AS channelId, m.author_id AS authorId,
+                m.author_name AS authorName, m.content AS content, m.kind AS kind,
+                m.importance AS importance, m.created_at AS createdAt, v.distance AS distance
          FROM (
            SELECT rowid AS id, distance
            FROM vec_memories
@@ -127,18 +134,21 @@ export class MemoryStore {
       return cand.sort((a, b) => a.distance - b.distance);
     }
 
-    // 2) Re-puntúa: relevancia (parecido) + recencia + importancia.
+    // 2) Re-puntúa: relevancia + recencia + importancia + contexto (que los
+    //    recuerdos de la persona y del canal actuales suban, para no cruzar
+    //    conversaciones ni juzgar a alguien por lo que dijo otro).
     const now = Date.now();
     const dists = cand.map((c) => c.distance);
-    const minD = Math.min(...dists);
-    const span = Math.max(...dists) - minD || 1;
+    const span = Math.max(...dists) - Math.min(...dists) || 1;
 
     const scored = cand.map((c) => {
       const relevance = (Math.max(...dists) - c.distance) / span; // 0..1 (1 = más cercano)
       const ageDays = (now - c.createdAt) / 86_400_000;
       const recency = Math.exp(-ageDays / 14); // ~2 semanas de vida media
       const importance = Math.min(c.importance, 10) / 10;
-      const score = 1.0 * relevance + 0.3 * recency + 0.5 * importance;
+      const sameAuthor = ctx.authorId && c.authorId === ctx.authorId ? 0.4 : 0;
+      const sameChannel = ctx.channelId && c.channelId === ctx.channelId ? 0.2 : 0;
+      const score = 1.0 * relevance + 0.3 * recency + 0.5 * importance + sameAuthor + sameChannel;
       return { c, score };
     });
 

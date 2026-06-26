@@ -439,7 +439,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
       {
         name: 'buscar_en_historial',
         description:
-          'Busca en el historial completo de este chat algo que se dijo antes. Úsalo SOLO si no estás segura de un dato y necesitas verificarlo antes de responder; no lo uses para todo.',
+          'Busca por palabra clave en el historial completo del chat. ÚSALO SIEMPRE que te pregunten si recuerdas algo concreto (un nombre, quién es alguien, qué pasó, un dato) y no lo tengas claro: BUSCA antes de decir que no lo recuerdas. No afirmes "no lo tengo" sin haber buscado primero. (Para charla normal no hace falta.)',
         parameters: {
           type: 'object',
           properties: {
@@ -490,7 +490,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
       {
         name: 'recordar',
         description:
-          'Busca en TU propia memoria (lo que has vivido y concluido) sobre un tema o una persona, para traerlo al frente cuando algo se sienta borroso. Es tu memoria ya procesada, distinta del historial crudo del chat.',
+          'Busca en TU propia memoria (lo que has vivido y concluido) sobre un tema o persona, para traerlo al frente cuando algo se sienta borroso o te pregunten si recuerdas algo y no estés segura. Complementa a buscar_en_historial (que es el registro crudo). Si te preguntan por algo concreto, usa una u otra ANTES de decir que no lo recuerdas.',
         parameters: {
           type: 'object',
           properties: { tema: { type: 'string', description: 'Tema, persona o palabras clave a recordar.' } },
@@ -747,6 +747,11 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     );
     for (const d of desires) parts.push(`- ${d}`);
     for (const g of goals) parts.push(`- (ahora te propones) ${g}`);
+
+    parts.push(
+      '',
+      'Si te preguntan si recuerdas algo concreto (un nombre, quién es alguien, qué pasó) y no lo tienes claro de inmediato, BUSCA en tu historial o tu memoria con tus herramientas ANTES de responder. No digas "no lo recuerdo" sin haber buscado: muchas veces sí lo tienes, solo hay que ir por él. (Eso sí: si tras buscar no aparece, no lo inventes.)'
+    );
 
     // Estado interno (ánimo + relación): le da color a su tono.
     if (notes.state) parts.push('', notes.state);

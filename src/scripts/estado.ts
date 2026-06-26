@@ -1,6 +1,6 @@
 import { openDb } from '../mind/db.js';
 import { MemoryStore } from '../mind/memory.js';
-import { Relationships } from '../mind/relationships.js';
+import { Relationships, affinityBand } from '../mind/relationships.js';
 import { EmotionState } from '../mind/emotion.js';
 import { ChatHistory } from '../mind/history.js';
 import { Goals } from '../mind/goals.js';
@@ -18,9 +18,18 @@ function bar(value: number, min: number, max: number, width = 12): string {
 }
 
 function affinityLabel(a: number): string {
-  if (a > 0.3) return 'buena onda';
-  if (a < -0.3) return 'roces';
-  return 'normal';
+  switch (affinityBand(a)) {
+    case 'muy_bien':
+      return 'buena onda';
+    case 'bien':
+      return 'le agrada';
+    case 'distante':
+      return 'distante';
+    case 'mal':
+      return 'roces';
+    default:
+      return 'normal';
+  }
 }
 
 function ago(ts?: number): string {

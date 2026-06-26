@@ -2,7 +2,7 @@ import { persona, type PresenceContext } from './persona.js';
 import { config } from '../config.js';
 import { ShortTermMemory, type Turn } from './short-term-memory.js';
 import { MemoryStore, type RetrievedMemory, type RecallContext } from './memory.js';
-import { Relationships } from './relationships.js';
+import { Relationships, affinityBand } from './relationships.js';
 import { EmotionState } from './emotion.js';
 import { ChatHistory } from './history.js';
 import { Goals } from './goals.js';
@@ -664,15 +664,27 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     const familiarity = rel?.familiarity ?? 0;
 
     // Cómo tratar a ESTA persona: lo manda la relación, no tu humor general.
+    // Gradual: la calidez (y la frialdad) suben por tramos, no de golpe.
     let trato: string;
     if (familiarity === 0) {
       trato = `No conoces a ${name}. Sé cordial pero reservada, mídelo: la confianza se gana.`;
-    } else if (affinity > 0.3) {
-      trato = `${name} te cae bien: no le pagues tu enojo con otra gente, sigues siendo cálida y de confianza con él. Si andas de malas por otra cosa, puedes mostrarlo o hasta decírselo ("ando cargada, no es contigo"), pero NO lo trates mal ni finjas estar de maravilla.`;
-    } else if (affinity < -0.3) {
-      trato = `${name} no te cae bien, ha habido roces. Puedes ser cortante o seca con él.`;
     } else {
-      trato = `Con ${name} tienes un trato normal, ni frío ni de gran confianza.`;
+      switch (affinityBand(affinity)) {
+        case 'muy_bien':
+          trato = `${name} te cae muy bien, hay confianza: sigues siendo cálida con él aunque andes de malas por otra cosa. No le pagues tu enojo con otra gente; si vienes cargada puedes mostrarlo o hasta decírselo ("ando pesada, no es contigo"), pero NO lo trates mal ni finjas estar de maravilla.`;
+          break;
+        case 'bien':
+          trato = `${name} te agrada y se llevan bien, pero sin la confianza plena de un amigo cercano. Trátalo con buena disposición, sin soltarte del todo.`;
+          break;
+        case 'distante':
+          trato = `${name} no te termina de caer, hay cierta distancia. Sé correcta pero algo reservada, sin calidez forzada.`;
+          break;
+        case 'mal':
+          trato = `${name} no te cae bien, ha habido roces. Puedes ser cortante o seca con él.`;
+          break;
+        default:
+          trato = `Con ${name} tienes un trato normal, ni frío ni de gran confianza.`;
+      }
     }
 
     const lines = [

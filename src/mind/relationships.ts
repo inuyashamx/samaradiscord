@@ -11,6 +11,22 @@ export interface Relationship {
   updatedAt?: number;
 }
 
+/** Tramos de afinidad. Una sola fuente de verdad para todos lados. */
+export type AffinityBand = 'muy_bien' | 'bien' | 'normal' | 'distante' | 'mal';
+
+/**
+ * Convierte la afinidad (-1..1) en un tramo. Gradual a propósito: "buena onda"
+ * se gana de verdad (>=0.6), no con un 0.30 apenas positivo. Simétrico en lo
+ * negativo. Así el trato cambia poco a poco en vez de saltar de golpe.
+ */
+export function affinityBand(affinity: number): AffinityBand {
+  if (affinity >= 0.6) return 'muy_bien';
+  if (affinity >= 0.2) return 'bien';
+  if (affinity > -0.2) return 'normal';
+  if (affinity > -0.6) return 'distante';
+  return 'mal';
+}
+
 /**
  * Lo que Samara siente por cada persona. Persistente: así "recuerda" con quién
  * se lleva bien entre sesiones, y de ahí van saliendo sus amistades.
@@ -81,13 +97,19 @@ export class Relationships {
     if (rel.familiarity < 5) {
       return `Conoces poco a ${rel.authorName}, apenas se están conociendo.`;
     }
-    if (rel.affinity > 0.3) {
-      return `${rel.authorName} te cae bien, hay buena onda entre ustedes.`;
+    const n = rel.authorName;
+    switch (affinityBand(rel.affinity)) {
+      case 'muy_bien':
+        return `${n} te cae muy bien, hay buena onda y confianza entre ustedes.`;
+      case 'bien':
+        return `${n} te agrada, te llevas bien con él, aunque sin tanta confianza todavía.`;
+      case 'distante':
+        return `${n} no te termina de caer, hay cierta distancia.`;
+      case 'mal':
+        return `${n} no te cae bien, ha habido roces.`;
+      default:
+        return `Conoces a ${n}, se tratan con normalidad.`;
     }
-    if (rel.affinity < -0.3) {
-      return `${rel.authorName} no te cae del todo bien, ha habido roces.`;
-    }
-    return `Conoces a ${rel.authorName}, se tratan con normalidad.`;
   }
 }
 

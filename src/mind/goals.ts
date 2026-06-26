@@ -94,6 +94,27 @@ export class Goals {
     this.write('lessons', dedup(lessons).slice(0, MAX_LESSONS));
   }
 
+  // --- Contadores / escalares persistentes (p.ej. el contador de reflexión) ---
+  /** Lee un número guardado en el estado (o el valor por defecto si no existe). */
+  getNum(key: string, fallback = 0): number {
+    const row = this.db.prepare(`SELECT value FROM state WHERE key = ?`).get(key) as
+      | { value: string }
+      | undefined;
+    if (!row) return fallback;
+    const n = Number(row.value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  /** Guarda un número en el estado (sobrevive a reinicios). */
+  setNum(key: string, value: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO state (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run(key, String(value));
+  }
+
   private read(key: string): string[] {
     const row = this.db.prepare(`SELECT value FROM state WHERE key = ?`).get(key) as
       | { value: string }

@@ -37,8 +37,14 @@ const MIN_MEMORABLE_LENGTH = 12;
  * Fase 2: + estado de ánimo y relaciones por persona.
  */
 export class Mind {
-  /** Interacciones acumuladas desde la última reflexión. */
+  /**
+   * Interacciones acumuladas desde la última reflexión. Persistente (en el
+   * estado de la BD): así sobrevive a reinicios y la reflexión llega aunque
+   * apaguemos y prendamos seguido. Se carga en el constructor.
+   */
   private interactionsSinceReflection = 0;
+  /** Clave del contador en el estado persistente. */
+  private static readonly REFLECT_COUNTER_KEY = 'reflect_counter';
   /** Evita reflexiones concurrentes. */
   private reflecting = false;
 
@@ -56,6 +62,11 @@ export class Mind {
     // Siembra sus deseos iniciales (de su canon) la primera vez. A partir de
     // ahí son suyos: ella los evoluciona con total libertad.
     this.goals.ensureSeeded(persona.desires);
+
+    // Recupera el contador de reflexión de la sesión anterior (no parte de 0
+    // en cada reinicio): así, aunque reiniciemos seguido, va sumando hacia su
+    // próxima reflexión en vez de reiniciarse cada vez.
+    this.interactionsSinceReflection = this.goals.getNum(Mind.REFLECT_COUNTER_KEY, 0);
   }
 
   /** Registra algo que pasó sin necesariamente responder (percepción pasiva). */
@@ -234,8 +245,10 @@ export class Mind {
       console.error('Error en apreciación emocional:', err)
     );
 
-    // De vez en cuando, repasa lo vivido y saca conclusiones propias.
+    // De vez en cuando, repasa lo vivido y saca conclusiones propias. El contador
+    // se guarda en la BD para que sobreviva a reinicios.
     this.interactionsSinceReflection++;
+    this.goals.setNum(Mind.REFLECT_COUNTER_KEY, this.interactionsSinceReflection);
     void this.maybeReflect();
 
     return reply;
@@ -286,6 +299,7 @@ export class Mind {
     if (this.reflecting) return;
     this.reflecting = true;
     this.interactionsSinceReflection = 0;
+    this.goals.setNum(Mind.REFLECT_COUNTER_KEY, 0);
     try {
       const ideas = await this.reflect();
       if (ideas.length) console.log(`💭 Samara reflexionó (${ideas.length} ideas).`);

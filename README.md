@@ -71,21 +71,24 @@ en qué canal) y decide qué hacer. Por eso el mismo núcleo servirá para el ju
 
 ### 💬 Participación orgánica
 
-No responde a todo. Ante un mensaje que no la etiqueta, un modelo pequeño y barato
-decide entre **responder / esperar / ignorar**, mirando el contexto:
+No responde a todo. Para no spamear:
 
-- Si la **etiquetan**, **responden a un mensaje suyo** o **dicen su nombre** → responde (y rápido).
-- Detecta cuándo le hablan **implícitamente** (p.ej. si en el chat solo están ella
-  y otra persona, casi todo va dirigido a ella).
-- En grupo no comenta cada mensaje, pero se mete cuando el tema le interesa.
-- **Anti-cadena**: no responde en bucle justo después de hablar.
+- **Directo → siempre responde (y rápido)**: si la **etiquetan**, **responden a un
+  mensaje suyo** o **escriben "samara"** en el texto.
+- **Ambiental (nadie la nombra) → freno anti-spam**: solo se mete sola cuando se
+  cumplen **ambas**: lleva un rato sin hablar ella (def. 3 min, `AMBIENT_QUIET_MIN_SEC`)
+  **y** han pasado varios mensajes desde su última intervención (def. 5,
+  `AMBIENT_EVERY_MESSAGES`). Cualquier trigger directo levanta el freno y reinicia
+  el conteo. Aun pasando el freno, puede **callarse** si no tiene nada que aportar.
+- **No se mete en mensajes dirigidos a otra persona** (reply o @ a alguien más).
 - **Velocidad contextual**: ágil si le hablan directo; "escribe" con pausa humana si se mete sola.
 
-### 🗣️ Iniciativa propia
+### 🗣️ Iniciativa propia (opcional, **off** por defecto)
 
-Si un canal queda en silencio un rato (tiempo **al azar** para que sea esporádico),
-Samara *considera* romper el silencio o hacerle plática a quien quedó sin respuesta
-— a veces sí, a veces no. No insiste si fue ella la última en hablar.
+Si se activa (`PROACTIVE_IDLE_MAX_SEC>0`) y un canal queda en silencio un rato
+(tiempo **al azar** para que sea esporádico), Samara *considera* romper el silencio
+o hacerle plática a quien quedó sin respuesta — a veces sí, a veces no. No insiste
+si fue ella la última en hablar. Viene apagada para que no hable "a la nada".
 
 ### ❤️ Emociones y relaciones
 
@@ -172,7 +175,8 @@ npm start
 | `OPENAI_DECISION_MODEL` | Modelo barato para decisiones (def. `gpt-4o-mini`) |
 | `OPENAI_EMBEDDING_MODEL` | Embeddings de memoria (def. `text-embedding-3-small`) |
 | `SHORT_TERM_WINDOW` | Mensajes recientes en memoria de trabajo |
-| `AMBIENT_MIN_GAP` | Anti-cadena: mensajes a esperar tras hablar |
+| `AMBIENT_QUIET_MIN_SEC` | Anti-spam: seg. sin hablar ella para meterse sola (def. 180) |
+| `AMBIENT_EVERY_MESSAGES` | Anti-spam: mensajes a esperar para meterse sola (def. 5) |
 | `PROACTIVE_IDLE_MIN_SEC` / `MAX_SEC` | Ventana de silencio para iniciativa propia (0 = off) |
 | `REFLECTION_EVERY` | Cada cuántas interacciones reflexiona (0 = off) |
 

@@ -1,4 +1,8 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+// override: true hace que el .env GANE sobre variables de entorno ya existentes
+// en el sistema (si tienes un OPENAI_API_KEY viejo en el entorno, el .env manda).
+dotenv.config({ override: true });
 
 /** Lanza un error claro si falta una variable requerida (se llama al usarla). */
 export function required(name: string): string {

@@ -69,11 +69,12 @@ export class DiscordBody {
   /** Temporizador de inactividad por canal (para iniciativa propia). */
   private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /**
-   * Freno de participación ambiental por canal: cuándo habló ella por última vez
-   * (ms epoch) y cuántos mensajes han pasado desde entonces. Efímero (se reinicia
-   * con el bot; a lo sumo tarda unos mensajes en re-armarse, no pasa nada).
+   * Estado de participación ambiental por canal: cuándo fue el último mensaje del
+   * canal (ms epoch, para medir si algo lleva rato sin respuesta) y cuántos
+   * mensajes han pasado desde su última intervención. Efímero (se reinicia con el
+   * bot; a lo sumo tarda unos mensajes en re-armarse, no pasa nada).
    */
-  private channelGate = new Map<string, { lastSpoke: number; msgsSince: number }>();
+  private channelGate = new Map<string, { lastMsgAt: number; msgsSince: number }>();
 
   constructor(
     private mind: Mind,
@@ -150,8 +151,12 @@ export class DiscordBody {
     const namesSamara = /\bsamara\b/i.test(perception.content);
     const explicitlyDirect = mentioned || replyingToHer || namesSamara;
 
-    // Cuenta la actividad del canal para el freno ambiental (todo mensaje humano).
+    // Estado del canal: cuánto llevaba sin actividad ANTES de este mensaje (para
+    // el trigger de "lleva rato sin respuesta") y cuenta de mensajes acumulados.
     const gate = this.gateFor(msg.channelId);
+    const now = Date.now();
+    const gapBefore = gate.lastMsgAt === 0 ? 0 : now - gate.lastMsgAt;
+    gate.lastMsgAt = now;
     gate.msgsSince++;
 
     // Ruido trivial (1-2 caracteres): no vale invocar al modelo, solo lo observa.
@@ -177,20 +182,22 @@ export class DiscordBody {
       return;
     }
 
-    // Freno ANTI-SPAM ambiental: si no le hablan directo, solo se mete sola
-    // cuando lleva un buen rato sin hablar ella Y ya pasaron varios mensajes
-    // desde su última intervención. Si no, solo observa y recuerda.
+    // Participación ambiental: si no le hablan directo, se mete sola solo si se
+    // cumple ALGUNA de estas (OR, independientes):
+    //  - ya pasaron N mensajes desde su última intervención, o
+    //  - el mensaje anterior llevaba rato sin que nadie contestara (silencio).
+    // Si no se cumple ninguna, solo observa y recuerda (no spamea).
     if (!explicitlyDirect) {
-      const { ambientQuietMinSec, ambientEveryMessages } = config.behavior;
-      const quietEnough = Date.now() - gate.lastSpoke >= ambientQuietMinSec * 1000;
-      const enoughMsgs = gate.msgsSince >= ambientEveryMessages;
-      if (!quietEnough || !enoughMsgs) {
+      const { ambientEveryMessages, ambientStaleMinSec } = config.behavior;
+      const porMensajes = gate.msgsSince >= ambientEveryMessages;
+      const porSilencio = gapBefore >= ambientStaleMinSec * 1000;
+      if (!porMensajes && !porSilencio) {
         this.mind.observe(perception);
         void this.mind.remember(perception).catch(() => {});
         debugLog('omite', {
-          motivo: 'freno ambiental',
-          quieto: quietEnough,
-          mensajesDesdeQueHablo: gate.msgsSince,
+          motivo: 'sin trigger ambiental',
+          mensajesAcumulados: gate.msgsSince,
+          silencioPrevioSeg: Math.round(gapBefore / 1000),
           de: authorName,
         });
         this.armIdle(msg);
@@ -199,17 +206,17 @@ export class DiscordBody {
     }
 
     try {
-      // Directo => contesta. Ambiental (ya pasó el freno) => aún PUEDE callarse
-      // si no tiene nada que aportar (allowSilence): no hay clasificador externo.
+      // Directo => contesta. Ambiental (con trigger) => aún PUEDE callarse si no
+      // tiene nada que aportar (allowSilence): no hay clasificador externo.
       const reply = await this.mind.respondTo(perception, { allowSilence: !explicitlyDirect });
       if (reply) {
         await this.typeLikeAHuman(msg, reply, explicitlyDirect);
         await this.deliver(msg, reply);
         this.logSamara(perception.channelId, reply);
-        // Habló: reinicia el freno (no vuelve a meterse sola hasta que pase de
-        // nuevo el rato Y se acumulen los mensajes).
-        gate.lastSpoke = Date.now();
+        // Habló: reinicia el conteo de mensajes (el trigger por silencio se mide
+        // solo, vía lastMsgAt) y marca su intervención como actividad reciente.
         gate.msgsSince = 0;
+        gate.lastMsgAt = Date.now();
       }
       // Si reply es null, se quedó callada (ya recordó lo que vio).
     } catch (err) {
@@ -219,11 +226,11 @@ export class DiscordBody {
     }
   }
 
-  /** Estado del freno ambiental para un canal (lo crea si no existe). */
-  private gateFor(channelId: string): { lastSpoke: number; msgsSince: number } {
+  /** Estado de participación ambiental para un canal (lo crea si no existe). */
+  private gateFor(channelId: string): { lastMsgAt: number; msgsSince: number } {
     let g = this.channelGate.get(channelId);
     if (!g) {
-      g = { lastSpoke: 0, msgsSince: 0 };
+      g = { lastMsgAt: 0, msgsSince: 0 };
       this.channelGate.set(channelId, g);
     }
     return g;

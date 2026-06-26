@@ -43,13 +43,15 @@ export const config = {
   debug: (process.env.DEBUG_LOG ?? 'false').toLowerCase() === 'true',
   behavior: {
     shortTermWindow: Number(process.env.SHORT_TERM_WINDOW ?? 40),
-    // Participación ambiental (SIN que le hablen directo): freno anti-spam. Solo
-    // se mete sola si lleva un buen rato sin hablar ella (ambientQuietMinSec) Y
-    // ya pasaron varios mensajes desde su última intervención (ambientEveryMessages).
+    // Participación ambiental (SIN que le hablen directo). Se mete sola si se
+    // cumple CUALQUIERA de estas dos (son independientes, OR):
+    //  - han pasado N mensajes desde su última intervención (ambientEveryMessages)
+    //  - o un mensaje lleva sin respuesta este tiempo (ambientStaleMinSec): alguien
+    //    escribió y nadie contestó; se evalúa en CADA mensaje.
     // Cualquier trigger directo (la etiquetan / le responden / dicen "samara")
-    // levanta el freno y reinicia el conteo: ahí siempre contesta.
-    ambientQuietMinSec: Number(process.env.AMBIENT_QUIET_MIN_SEC ?? 180),
+    // siempre contesta y reinicia el conteo.
     ambientEveryMessages: Number(process.env.AMBIENT_EVERY_MESSAGES ?? 5),
+    ambientStaleMinSec: Number(process.env.AMBIENT_STALE_MIN_SEC ?? 600),
     // Iniciativa propia: si un canal queda en silencio un rato (segundos),
     // Samara considera romper el silencio / hacer plática. Se elige un tiempo
     // al azar entre min y max para que se sienta esporádico. 0 = desactivado.

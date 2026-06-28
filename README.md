@@ -76,6 +76,11 @@ en qué canal) y decide qué hacer. Por eso el mismo núcleo servirá para el ju
 - **Busca en internet**: tiene una herramienta (`buscar_en_internet`) que ELLA
   decide usar cuando le preguntan algo actual o que no sabe, en vez de inventar.
   Backend: Tavily/Brave si pones una key (fiable), o DuckDuckGo sin key.
+- **Abre enlaces** (`abrir_enlace`): si le pasan un link, lee la página y la comenta.
+- **Reacciona con emojis** (`reaccionar`): en vez de escribir, a veces solo deja
+  su reacción al mensaje — y puede reaccionar y además responder, o solo reaccionar.
+- **Se pone recordatorios** (`recordarme`): se apunta cosas para sacarlas ELLA
+  sola más tarde ("luego le pregunto a X"); persisten y los retoma a su hora.
 
 ### 💬 Participación orgánica
 

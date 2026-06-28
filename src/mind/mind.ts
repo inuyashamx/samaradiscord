@@ -4,6 +4,7 @@ import { ShortTermMemory, type Turn } from './short-term-memory.js';
 import { MemoryStore, type RetrievedMemory, type RecallContext } from './memory.js';
 import { Relationships, affinityBand } from './relationships.js';
 import { webSearchText, readUrlText } from './web-search.js';
+import { Reminders, type Reminder } from './reminders.js';
 import { EmotionState } from './emotion.js';
 import { ChatHistory } from './history.js';
 import { Goals } from './goals.js';
@@ -50,6 +51,10 @@ export class Mind {
   private static readonly REFLECT_COUNTER_KEY = 'reflect_counter';
   /** Evita reflexiones concurrentes. */
   private reflecting = false;
+  /** Cómo entregar un recordatorio cuando toca (lo registra el cuerpo). */
+  private reminderSink?: (channelId: string, text: string) => void;
+  /** Timer del chequeo periódico de recordatorios. */
+  private reminderTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private llm: LLMProvider,
@@ -59,6 +64,7 @@ export class Mind {
     private stm: ShortTermMemory,
     private history: ChatHistory,
     private goals: Goals,
+    private reminders: Reminders,
     /** Dónde "vive" esta instancia: Discord o el juego. El cuerpo lo define. */
     private presence: PresenceContext = 'discord'
   ) {
@@ -80,6 +86,51 @@ export class Mind {
       content: p.content,
       isSamara,
     });
+  }
+
+  /** El cuerpo registra cómo entregar un recordatorio cuando toca (enviar al canal). */
+  setReminderSink(sink: (channelId: string, text: string) => void): void {
+    this.reminderSink = sink;
+  }
+
+  /** Arranca el chequeo periódico de recordatorios (idempotente). */
+  startReminders(): void {
+    if (this.reminderTimer) return;
+    const tick = () =>
+      void this.checkReminders().catch((e) => console.error('Error en recordatorios:', e));
+    this.reminderTimer = setInterval(tick, 30_000);
+    tick(); // chequeo inmediato: recupera los que vencieron mientras estaba apagada
+  }
+
+  /** Saca los recordatorios que ya tocan (uno por uno, retomándolos natural). */
+  private async checkReminders(): Promise<void> {
+    if (!this.reminderSink) return; // aún no hay cómo entregarlos
+    for (const r of this.reminders.due()) {
+      this.reminders.markDone(r.id); // marca antes de generar, para no repetir
+      await this.fireReminder(r);
+    }
+  }
+
+  /** Genera una línea natural retomando el recordatorio y la entrega al canal. */
+  private async fireReminder(r: Reminder): Promise<void> {
+    let line: string;
+    try {
+      const raw = await this.llm.chat(
+        [
+          {
+            role: 'system',
+            content: `${persona.identity}\n\nTe apuntaste tú misma un recordatorio y ahora toca sacarlo en el chat, con naturalidad, como cuando de pronto te acuerdas de algo ("oye, me acordé que..."). Una sola línea, tu estilo. NO digas que es un recordatorio del sistema ni menciones herramientas.`,
+          },
+          { role: 'user', content: `Lo que querías retomar: ${r.text}\nSácalo ahora, natural.` },
+        ],
+        { maxTokens: 160 }
+      );
+      line = sanitizeReply(raw);
+    } catch {
+      line = `oye, me acordé de algo: ${r.text}`;
+    }
+    debugLog('recordatorio', { canal: r.channelId, texto: line });
+    this.reminderSink?.(r.channelId, line);
   }
 
   /**
@@ -507,6 +558,23 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         },
       },
       {
+        name: 'recordarme',
+        description:
+          'Ponte un recordatorio para sacar algo TÚ MISMA en el chat más tarde (ej: "recuérdame preguntarle a X mañana", "en un rato retomo esto"). Lo sacarás sola cuando llegue el momento. Indica QUÉ retomar y CUÁNDO.',
+        parameters: {
+          type: 'object',
+          properties: {
+            que: { type: 'string', description: 'Qué quieres retomar/sacar después, en tus palabras.' },
+            cuando: {
+              type: 'string',
+              description:
+                'Cuándo, en fecha y hora ISO (YYYY-MM-DDTHH:mm) calculada desde la fecha y hora actuales que ya conoces. Ej: si hoy es 2026-06-28 y dices "mañana 5pm" -> 2026-06-29T17:00.',
+            },
+          },
+          required: ['que', 'cuando'],
+        },
+      },
+      {
         name: 'fijar_meta',
         description:
           'Cuando DECIDES proponerte algo (una meta tuya: ganarte a alguien, descubrir algo, lograr que te tomen en serio, etc.), anótala para perseguirla. Úsalo solo cuando de verdad te lo propongas, no a cada rato.',
@@ -627,6 +695,13 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           if (emoji && onReact) onReact(emoji);
           return emoji ? `listo, reaccionaste con ${emoji}` : 'no pusiste ningún emoji';
         }
+        case 'recordarme': {
+          const que = String(args.que ?? '').trim();
+          const fireAt = Date.parse(String(args.cuando ?? ''));
+          if (!que || Number.isNaN(fireAt)) return 'no me quedó claro qué o cuándo recordarlo';
+          this.reminders.add(channelId, que, fireAt);
+          return 'va, me lo apunto y lo saco cuando toque';
+        }
         case 'fijar_meta':
           this.goals.add(String(args.meta ?? ''));
           return 'hecho, me lo propongo';
@@ -687,6 +762,8 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     if (des.length) lines.push(`deseos: ${des.join(' | ')}`);
     const met = this.goals.get();
     if (met.length) lines.push(`metas: ${met.join(' | ')}`);
+    const pend = this.reminders.countPending();
+    if (pend) lines.push(`recordatorios pendientes: ${pend}`);
     const rels = this.relationships
       .all()
       .slice(0, 8)

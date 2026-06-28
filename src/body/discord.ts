@@ -109,6 +109,9 @@ export class DiscordBody {
   async start(): Promise<void> {
     this.client.once(Events.ClientReady, (c) => {
       console.log(`✅ Samara está en línea como ${c.user.tag}`);
+      // Recordatorios: cómo los entrega (manda al canal) y arranca el reloj.
+      this.mind.setReminderSink((channelId, text) => this.sendToChannel(channelId, text));
+      this.mind.startReminders();
     });
 
     this.client.on(Events.MessageCreate, (msg) => this.onMessage(msg));
@@ -321,6 +324,21 @@ export class DiscordBody {
       await msg.channel.send(clean); // mensaje normal
     } else {
       await msg.reply(clean);
+    }
+  }
+
+  /** Envía un mensaje a un canal por id (para recordatorios que ella misma saca). */
+  private async sendToChannel(channelId: string, text: string): Promise<void> {
+    try {
+      const ch =
+        this.client.channels.cache.get(channelId) ?? (await this.client.channels.fetch(channelId));
+      if (ch && 'send' in ch) {
+        const clean = styleOutput(text);
+        await ch.send(clean);
+        this.logSamara(channelId, clean);
+      }
+    } catch (err) {
+      console.error('Error entregando recordatorio:', err);
     }
   }
 

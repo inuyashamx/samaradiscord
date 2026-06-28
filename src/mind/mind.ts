@@ -785,16 +785,17 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     if (recalled.length > 0) {
       parts.push(
         '',
-        'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado). OJO: son de DISTINTAS personas y momentos; NO le atribuyas a quien te habla ahora lo que dijo o hizo otra persona. Y el TONO o la carga emocional de un recuerdo pertenece a AQUEL momento: no traslades ese ánimo a esta conversación salvo que de verdad venga al caso:'
+        'Cosas que recuerdas de antes (úsalas solo si son relevantes, no las menciones forzado). Cada una trae un "cuándo" APROXIMADO: úsalo para ubicarla en el tiempo si te preguntan, pero háblalo natural ("hace tiempo", "el otro día"), no como una fecha de fichero. OJO: son de DISTINTAS personas y momentos; NO le atribuyas a quien te habla ahora lo que dijo o hizo otra persona. Y el TONO o la carga emocional de un recuerdo pertenece a AQUEL momento: no traslades ese ánimo a esta conversación salvo que de verdad venga al caso:'
       );
       for (const m of recalled) {
         // Distingue: opiniones suyas, vivencias suyas, y cosas que se dijeron.
+        // A las vivencias y a lo dicho se les pega un "cuándo" difuso.
         if (m.kind === 'reflection') {
           parts.push(`- (algo que piensas) ${m.content}`);
         } else if (m.kind === 'experience') {
-          parts.push(`- (algo que viviste) ${m.content}`);
+          parts.push(`- (algo que viviste, ${agoFuzzy(m.createdAt)}) ${m.content}`);
         } else {
-          parts.push(`- ${m.authorName} dijo: "${m.content}"`);
+          parts.push(`- ${agoFuzzy(m.createdAt)}, ${m.authorName} dijo: "${m.content}"`);
         }
       }
     }
@@ -973,6 +974,35 @@ function humanGap(ms: number): string {
   if (h < 24) return h === 1 ? '1 hora' : `${h} horas`;
   const days = Math.round(h / 24);
   return days === 1 ? '1 día' : `${days} días`;
+}
+
+/**
+ * Tiempo relativo DIFUSO para etiquetar un recuerdo ("hace un rato", "hace unos
+ * días", "hace años"). Vago a propósito: así Samara ubica un recuerdo en el
+ * tiempo y habla de él natural, sin recitar fechas exactas (que ella misma no
+ * "ve" pegadas al recuerdo). createdAt en ms epoch.
+ */
+function agoFuzzy(createdAt: number, now = Date.now()): string {
+  const ms = now - createdAt;
+  if (ms < 0) return 'hace nada';
+  const min = ms / 60000;
+  if (min < 2) return 'hace un momento';
+  if (min < 60) return 'hace un rato';
+  const h = min / 60;
+  if (h < 6) return 'hace unas horas';
+  if (h < 24) return 'hoy mismo';
+  const d = h / 24;
+  if (d < 2) return 'ayer';
+  if (d < 7) return 'hace unos días';
+  if (d < 14) return 'hace cosa de una semana';
+  if (d < 31) return 'hace un par de semanas';
+  const months = d / 30;
+  if (months < 2) return 'hace como un mes';
+  if (months < 11) return `hace unos ${Math.round(months)} meses`;
+  const years = d / 365;
+  if (years < 1.5) return 'hace como un año';
+  if (years < 2.5) return 'hace un par de años';
+  return `hace ${Math.round(years)} años`;
 }
 
 /** Parsea las reflexiones; acepta JSON o, si falla, líneas sueltas. */

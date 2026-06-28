@@ -38,6 +38,42 @@ export async function webSearchText(query: string, maxResults = 5): Promise<stri
     .join('\n\n');
 }
 
+/**
+ * Abre un enlace y devuelve su texto legible (título + cuerpo, recortado). Para
+ * cuando le pasan un link y quiere saber de qué trata. No es un navegador
+ * completo: lee el HTML y le quita scripts/estilos/etiquetas.
+ */
+export async function readUrlText(url: string, maxChars = 2000): Promise<string> {
+  const u = url.trim();
+  if (!/^https?:\/\//i.test(u)) return 'eso no parece un enlace válido';
+  let res: Response;
+  try {
+    res = await fetchTimeout(u, { headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' } });
+  } catch {
+    return 'no pude abrir ese enlace ahora mismo';
+  }
+  if (!res.ok) return `no pude abrir el enlace (status ${res.status})`;
+  const ct = res.headers.get('content-type') ?? '';
+  if (!/text|html|xml|json/i.test(ct)) {
+    return `ese enlace no es una página de texto (${ct.split(';')[0] || 'tipo desconocido'}), no puedo leerlo`;
+  }
+  return extractReadable(await res.text(), maxChars);
+}
+
+/** Saca el título y el texto principal de un HTML, sin scripts/estilos/etiquetas. */
+function extractReadable(html: string, maxChars: number): string {
+  const titleM = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleM ? stripHtml(titleM[1]) : '';
+  const body = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+  const text = stripHtml(body);
+  const combined = (title && !text.startsWith(title) ? `${title}\n` : '') + text;
+  return combined.slice(0, maxChars).trim() || 'la página no tenía texto legible';
+}
+
 /** Resultados crudos (elige backend según las keys disponibles). */
 export async function webSearch(query: string, maxResults = 5): Promise<WebResult[]> {
   if (config.search.tavilyKey) return tavily(query, maxResults, config.search.tavilyKey);

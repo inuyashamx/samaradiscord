@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { ShortTermMemory, type Turn } from './short-term-memory.js';
 import { MemoryStore, type RetrievedMemory, type RecallContext } from './memory.js';
 import { Relationships, affinityBand } from './relationships.js';
-import { webSearchText } from './web-search.js';
+import { webSearchText, readUrlText } from './web-search.js';
 import { EmotionState } from './emotion.js';
 import { ChatHistory } from './history.js';
 import { Goals } from './goals.js';
@@ -479,6 +479,18 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         },
       },
       {
+        name: 'abrir_enlace',
+        description:
+          'Abre un enlace (URL) y lee de qué trata la página, para comentarlo. Úsalo cuando alguien te pase un link y quieras ver qué dice antes de opinar, en vez de adivinar por la pura URL.',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'El enlace completo a abrir (empieza con http).' },
+          },
+          required: ['url'],
+        },
+      },
+      {
         name: 'fijar_meta',
         description:
           'Cuando DECIDES proponerte algo (una meta tuya: ganarte a alguien, descubrir algo, lograr que te tomen en serio, etc.), anótala para perseguirla. Úsalo solo cuando de verdad te lo propongas, no a cada rato.',
@@ -592,6 +604,8 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         }
         case 'buscar_en_internet':
           return webSearchText(String(args.consulta ?? ''), 5);
+        case 'abrir_enlace':
+          return readUrlText(String(args.url ?? ''));
         case 'fijar_meta':
           this.goals.add(String(args.meta ?? ''));
           return 'hecho, me lo propongo';

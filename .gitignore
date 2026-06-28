@@ -6,6 +6,9 @@ dist/
 # Artefactos de Playwright MCP (capturas de navegación)
 .playwright-mcp/
 
+# Muestras de voz (audios de prueba TTS)
+voice-samples/
+
 # Estado persistente de Samara (memoria, emociones, relaciones)
 data/
 *.db

@@ -233,7 +233,14 @@ export class DiscordBody {
     try {
       // Directo => contesta. Ambiental (con trigger) => aún PUEDE callarse si no
       // tiene nada que aportar (allowSilence): no hay clasificador externo.
-      const reply = await this.mind.respondTo(perception, { allowSilence: !explicitlyDirect });
+      const reply = await this.mind.respondTo(perception, {
+        allowSilence: !explicitlyDirect,
+        // Mente -> cuerpo: si decide reaccionar, ponemos el emoji en ESTE mensaje.
+        onReact: (emoji) => {
+          msg.react(emoji).catch(() => {}); // emoji inválido o sin permiso: lo ignoramos
+          debugLog('reaccion', { a: authorName, emoji });
+        },
+      });
       if (reply) {
         await this.typeLikeAHuman(msg, reply, explicitlyDirect);
         await this.deliver(msg, reply);

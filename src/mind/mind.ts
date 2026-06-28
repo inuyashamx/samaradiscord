@@ -159,7 +159,10 @@ export class Mind {
    * etiquetan), ELLA decide si entra o se queda callada: si decide callar,
    * devuelve null (igual recuerda lo que vio).
    */
-  async respondTo(p: Perception, opts: { allowSilence?: boolean } = {}): Promise<string | null> {
+  async respondTo(
+    p: Perception,
+    opts: { allowSilence?: boolean; onReact?: (emoji: string) => void } = {}
+  ): Promise<string | null> {
     this.observe(p);
 
     // Para recuperar, embebemos el CONTEXTO reciente (no solo el último mensaje):
@@ -220,7 +223,7 @@ export class Mind {
       system: messages[0]?.content,
       turnos: messages.length - 1,
     });
-    const reply = await this.generateReply(p.channelId, messages, opts.allowSilence);
+    const reply = await this.generateReply(p.channelId, messages, opts.allowSilence, opts.onReact);
 
     // Si decidió quedarse callada: igual recuerda lo que presenció (la vio
     // pasar, como una persona que lee), pero no responde ni la "aprecia".
@@ -449,7 +452,8 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
   private async generateReply(
     channelId: string,
     messages: ChatMessage[],
-    allowSilence = false
+    allowSilence = false,
+    onReact?: (emoji: string) => void
   ): Promise<string | null> {
     if (!this.llm.chatWithTools) return sanitizeReply(await this.llm.chat(messages));
 
@@ -488,6 +492,18 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
             url: { type: 'string', description: 'El enlace completo a abrir (empieza con http).' },
           },
           required: ['url'],
+        },
+      },
+      {
+        name: 'reaccionar',
+        description:
+          'Reacciona al último mensaje con UN emoji (😂 ❤️ 👍 🔥 😒 💀 🙄...), como cuando una persona en vez de escribir solo pone una reacción. Puedes reaccionar Y además responder, o solo reaccionar y quedarte callada si con eso basta. Usa el emoji que de verdad te nazca, según tu ánimo y cómo te llevas con esa persona. No abuses: solo cuando de verdad te provoque.',
+        parameters: {
+          type: 'object',
+          properties: {
+            emoji: { type: 'string', description: 'Un solo emoji.' },
+          },
+          required: ['emoji'],
         },
       },
       {
@@ -606,6 +622,11 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           return webSearchText(String(args.consulta ?? ''), 5);
         case 'abrir_enlace':
           return readUrlText(String(args.url ?? ''));
+        case 'reaccionar': {
+          const emoji = String(args.emoji ?? '').trim();
+          if (emoji && onReact) onReact(emoji);
+          return emoji ? `listo, reaccionaste con ${emoji}` : 'no pusiste ningún emoji';
+        }
         case 'fijar_meta':
           this.goals.add(String(args.meta ?? ''));
           return 'hecho, me lo propongo';

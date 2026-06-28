@@ -69,6 +69,14 @@ en qué canal) y decide qué hacer. Por eso el mismo núcleo servirá para el ju
    recupera por **similitud semántica** los recuerdos más relevantes al tema y los
    mete en su prompt. Así recuerda cosas de hace días, no solo lo último.
 
+### 👁️ Ojos y búsqueda
+
+- **Ve imágenes**: si le mandan una imagen en un mensaje al que responde, la
+  "ve" de verdad (visión del modelo) y reacciona a lo que hay en ella.
+- **Busca en internet**: tiene una herramienta (`buscar_en_internet`) que ELLA
+  decide usar cuando le preguntan algo actual o que no sabe, en vez de inventar.
+  Backend: Tavily/Brave si pones una key (fiable), o DuckDuckGo sin key.
+
 ### 💬 Participación orgánica
 
 No responde a todo. Para no spamear:
@@ -175,6 +183,7 @@ npm start
 | `OPENAI_MODEL` | Modelo del "cerebro" (def. `gpt-4o`) |
 | `OPENAI_DECISION_MODEL` | Modelo barato para decisiones (def. `gpt-4o-mini`) |
 | `OPENAI_EMBEDDING_MODEL` | Embeddings de memoria (def. `text-embedding-3-small`) |
+| `TAVILY_API_KEY` / `BRAVE_API_KEY` | (Opcional) búsqueda web fiable; sin key usa DuckDuckGo |
 | `SHORT_TERM_WINDOW` | Mensajes recientes en memoria de trabajo |
 | `AMBIENT_EVERY_MESSAGES` | Anti-spam: se mete cada N mensajes (def. 5) |
 | `AMBIENT_STALE_MIN_SEC` | Anti-spam: o si un mensaje lleva N seg sin respuesta (def. 600) |

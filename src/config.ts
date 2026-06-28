@@ -39,6 +39,12 @@ export const config = {
     decisionModel: process.env.OPENAI_DECISION_MODEL || 'gpt-4o-mini',
     embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
   },
+  // Búsqueda en internet (herramienta buscar_en_internet). Sin keys usa
+  // DuckDuckGo (gratis pero se bloquea si se usa mucho); con una key es fiable.
+  search: {
+    tavilyKey: process.env.TAVILY_API_KEY || undefined,
+    braveKey: process.env.BRAVE_API_KEY || undefined,
+  },
   // Log de depuración de acciones internas en data/debug.jsonl (para auditar).
   debug: (process.env.DEBUG_LOG ?? 'false').toLowerCase() === 'true',
   behavior: {

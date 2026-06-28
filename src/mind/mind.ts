@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { ShortTermMemory, type Turn } from './short-term-memory.js';
 import { MemoryStore, type RetrievedMemory, type RecallContext } from './memory.js';
 import { Relationships, affinityBand } from './relationships.js';
+import { webSearchText } from './web-search.js';
 import { EmotionState } from './emotion.js';
 import { ChatHistory } from './history.js';
 import { Goals } from './goals.js';
@@ -466,6 +467,18 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         },
       },
       {
+        name: 'buscar_en_internet',
+        description:
+          'Busca información ACTUAL en internet (noticias, datos, qué es algo, cómo va algo hoy, una persona/juego/tema público). Úsalo cuando te pregunten por algo que no está en tu memoria ni en el chat, o que pueda ser reciente o haber cambiado, en vez de inventar o decir que no sabes. NO lo uses para charla normal ni para cosas tuyas o que ya sabes.',
+        parameters: {
+          type: 'object',
+          properties: {
+            consulta: { type: 'string', description: 'Lo que quieres buscar (pregunta o palabras clave).' },
+          },
+          required: ['consulta'],
+        },
+      },
+      {
         name: 'fijar_meta',
         description:
           'Cuando DECIDES proponerte algo (una meta tuya: ganarte a alguien, descubrir algo, lograr que te tomen en serio, etc.), anótala para perseguirla. Úsalo solo cuando de verdad te lo propongas, no a cada rato.',
@@ -577,6 +590,8 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
             ? 'No encontré nada sobre eso en el historial.'
             : found.map((e) => `${e.authorName}: ${e.content}`).join('\n');
         }
+        case 'buscar_en_internet':
+          return webSearchText(String(args.consulta ?? ''), 5);
         case 'fijar_meta':
           this.goals.add(String(args.meta ?? ''));
           return 'hecho, me lo propongo';

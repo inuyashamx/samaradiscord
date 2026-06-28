@@ -20,6 +20,8 @@ export interface Perception {
   replyTo?: string;
   /** Otras personas etiquetadas (@) en el mensaje, que no son Samara. */
   mentionsOthers?: string[];
+  /** URLs de imágenes adjuntas al mensaje (para que Samara las "vea"). */
+  images?: string[];
 }
 
 /** Cuántos recuerdos de largo plazo recuperar por respuesta. */
@@ -209,6 +211,7 @@ export class Mind {
     const messages = this.buildPrompt(p.channelId, recalled, {
       state: `${temporal}\n${stateNote}`,
       instruction,
+      images: p.images,
     });
     // Para debug: el prompt completo que se le arma (system) y cuántos turnos lleva.
     debugLog('prompt', {
@@ -749,7 +752,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
   private buildPrompt(
     channelId: string,
     recalled: RetrievedMemory[],
-    notes: { state?: string; instruction?: string } = {}
+    notes: { state?: string; instruction?: string; images?: string[] } = {}
   ): ChatMessage[] {
     const parts = [
       persona.identity,
@@ -820,6 +823,19 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
       role: t.isSamara ? 'assistant' : 'user',
       content: t.isSamara ? t.content : `${t.authorName}: ${t.content}`,
     }));
+
+    // Visión: si el mensaje actual trae imágenes, se las pegamos al ÚLTIMO turno
+    // (el mensaje que está respondiendo) como partes multimodales, para que el
+    // modelo las "vea". Solo el actual: las URLs de Discord caducan, no las
+    // guardamos ni las arrastramos en el historial.
+    const imgs = (notes.images ?? []).slice(0, 4);
+    const last = history[history.length - 1];
+    if (imgs.length > 0 && last && last.role === 'user' && typeof last.content === 'string') {
+      last.content = [
+        { type: 'text', text: last.content },
+        ...imgs.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+      ];
+    }
 
     return [{ role: 'system', content: system }, ...history];
   }

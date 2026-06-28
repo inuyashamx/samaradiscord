@@ -41,6 +41,22 @@ function resolveMentions(msg: Message): string {
 }
 
 /**
+ * URLs de las imágenes adjuntas a un mensaje (png/jpg/gif/webp). Es lo que
+ * Samara "ve". Discord da contentType (p.ej. "image/png"); si falta, caemos a
+ * la extensión. Máximo 4 para acotar costo de visión.
+ */
+function imageUrlsOf(msg: Message): string[] {
+  return [...msg.attachments.values()]
+    .filter(
+      (a) =>
+        a.contentType?.startsWith('image/') ||
+        /\.(png|jpe?g|gif|webp)(\?|$)/i.test(a.name ?? a.url)
+    )
+    .map((a) => a.url)
+    .slice(0, 4);
+}
+
+/**
  * Estilo "chat real": el modelo escribe con ortografía perfecta por más que se
  * le pida lo contrario, así que normalizamos el texto. Minúsculas, sin acentos
  * (conservando la ñ), sin puntos finales ni "...", sin signos de apertura ¿¡.
@@ -102,7 +118,11 @@ export class DiscordBody {
 
   private async onMessage(msg: Message): Promise<void> {
     if (msg.author.bot) return; // ignora a otros bots y a sí misma
-    if (!msg.content) return;
+
+    // Imágenes adjuntas: para que Samara las "vea" (visión del modelo).
+    const images = imageUrlsOf(msg);
+    // Nada que procesar si no hay ni texto ni imágenes.
+    if (!msg.content && images.length === 0) return;
 
     // Llegó actividad: cancela cualquier "romper silencio" pendiente. Al final
     // se rearmará, así el temporizador solo dispara cuando el canal queda quieto.
@@ -123,14 +143,17 @@ export class DiscordBody {
       .map((u) => msg.mentions.members?.get(u.id)?.displayName ?? u.username);
 
     const authorName = msg.member?.displayName ?? msg.author.username;
+    const text = resolveMentions(msg); // <@id> -> @Nombre (si no, el modelo se confunde)
     const perception: Perception = {
       channelId: msg.channelId,
       authorId: msg.author.id,
       authorName,
-      content: resolveMentions(msg), // <@id> -> @Nombre (si no, el modelo se confunde)
+      // Si el mensaje es solo imagen (sin texto), deja un marcador legible.
+      content: text || (images.length ? '[imagen]' : text),
       isDev: this.isDev(msg.author.id, authorName, msg.author.username),
       replyTo: replyToOther, // si le responde a otra persona, no a Samara
       mentionsOthers: mentionsOthers.length ? mentionsOthers : undefined,
+      images: images.length ? images : undefined,
     };
 
     // Historial crudo: registra TODO lo que se dice (sustrato completo).
@@ -141,6 +164,7 @@ export class DiscordBody {
       dev: perception.isDev,
       respondeA: perception.replyTo,
       texto: perception.content,
+      imagenes: images.length || undefined,
     });
 
     // "Directo" = le hablan a ELLA: la etiquetan, responden a un mensaje suyo, o
@@ -159,8 +183,9 @@ export class DiscordBody {
     gate.lastMsgAt = now;
     gate.msgsSince++;
 
-    // Ruido trivial (1-2 caracteres): no vale invocar al modelo, solo lo observa.
-    if (!explicitlyDirect && msg.content.trim().length < 3) {
+    // Ruido trivial (1-2 caracteres) SIN imagen: no vale invocar al modelo. Una
+    // imagen nunca es "ruido": puede ser justo lo que quiere que vea.
+    if (!explicitlyDirect && images.length === 0 && msg.content.trim().length < 3) {
       this.mind.observe(perception);
       void this.mind.remember(perception).catch(() => {});
       this.armIdle(msg);

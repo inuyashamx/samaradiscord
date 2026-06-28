@@ -1,9 +1,15 @@
 import OpenAI from 'openai';
 import { config } from '../config.js';
 
+/** Una parte del contenido de un mensaje: texto o una imagen (para visión). */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  /** Texto plano, o partes (texto + imágenes) cuando el mensaje trae imágenes. */
+  content: string | ContentPart[];
 }
 
 export interface ChatOptions {

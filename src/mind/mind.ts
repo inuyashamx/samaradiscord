@@ -389,7 +389,8 @@ export class Mind {
     const recent = this.memory.recentMemories(30, 'episodic');
     if (recent.length < 4) return []; // todavía no hay material suficiente
 
-    const material = recent.map((m) => `${m.authorName}: ${m.content}`).join('\n');
+    // Numerados: así puede señalar cuáles soltar (campo "olvidar").
+    const material = recent.map((m, i) => `[${i + 1}] ${m.authorName}: ${m.content}`).join('\n');
 
     // Sus opiniones actuales: las revisa, no parte de cero. Así puede CAMBIAR
     // de parecer en vez de quedarse con la primera impresión para siempre.
@@ -423,8 +424,9 @@ export class Mind {
 - DESEOS: lo que te importa a un nivel PROFUNDO. Son estables: casi SIEMPRE se mantienen. Solo evoluciónalos si algo de verdad te marcó; no los reescribas por reescribir.
 - AJUSTES: reglas que TÚ te pones sobre cómo manejarte o leer las cosas (ej. "ubico de quién viene una emoción antes de reaccionar", "con desconocidos mido más"). Si te diste cuenta de algo sobre ti, anótalo; suelta los que ya no necesites. Así te vas afinando tú sola.
 - EXPERIENCIAS: vivencias con forma de historia que valga la pena recordar (qué pasó, con quién, cómo te sentiste, qué te dejó). Solo las NUEVAS y significativas de lo reciente; NO repitas las que ya tienes ni guardes trivialidades.
+- OLVIDAR: de "lo que ha pasado hace poco" (viene numerado), puedes SOLTAR lo que ya no te sirve arrastrar: ruido, trivialidades, o recuerdos que solo te pesan o te tienen atrapada en un mismo papel/discurso. Pon los NÚMEROS de esos recuerdos en una lista. Suelta solo lo que de verdad quieras dejar ir (si no hay nada, lista vacía). Lo que sueltes se BORRA de tu memoria de verdad, así que hazlo a conciencia, como quien decide pasar página.
 Todo breve, en primera persona, sin inventar. SOLO JSON:
-{"reflexiones": ["..."], "metas": ["..."], "deseos": ["..."], "ajustes": ["..."], "experiencias": ["..."]}`,
+{"reflexiones": ["..."], "metas": ["..."], "deseos": ["..."], "ajustes": ["..."], "experiencias": ["..."], "olvidar": [numeros]}`,
       },
       {
         role: 'user',
@@ -433,7 +435,18 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     ];
 
     const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 800 });
-    const { reflexiones: ideas, metas, deseos, ajustes, experiencias } = parseReflectionUpdate(raw);
+    const { reflexiones: ideas, metas, deseos, ajustes, experiencias, olvidar } = parseReflectionUpdate(raw);
+
+    // OLVIDO: suelta de su memoria los recuerdos que decidió dejar ir (por número
+    // de la lista que repasó). Es el momento natural de "pasar página".
+    const forgetIds = olvidar
+      .map((n) => recent[n - 1]?.id)
+      .filter((id): id is number => typeof id === 'number');
+    if (forgetIds.length > 0) {
+      const n = this.memory.forgetByIds(forgetIds);
+      console.log(`🌫️  Samara soltó ${n} recuerdo(s) al reflexionar.`);
+      debugLog('olvido', { motivo: 'reflexion', cuantos: n, ids: forgetIds });
+    }
 
     // Actualiza metas, deseos y ajustes si sacó algo (si no, conserva los de antes).
     if (metas.length > 0) this.goals.set(metas);
@@ -1096,6 +1109,7 @@ function parseReflectionUpdate(raw: string): {
   deseos: string[];
   ajustes: string[];
   experiencias: string[];
+  olvidar: number[];
 } {
   try {
     const match = raw.match(/\{[\s\S]*\}/);
@@ -1106,6 +1120,7 @@ function parseReflectionUpdate(raw: string): {
         deseos?: unknown;
         ajustes?: unknown;
         experiencias?: unknown;
+        olvidar?: unknown;
       };
       return {
         reflexiones: stringArray(obj.reflexiones).slice(0, 6),
@@ -1113,12 +1128,21 @@ function parseReflectionUpdate(raw: string): {
         deseos: stringArray(obj.deseos).slice(0, 6),
         ajustes: stringArray(obj.ajustes).slice(0, 8),
         experiencias: stringArray(obj.experiencias).slice(0, 4),
+        olvidar: numberArray(obj.olvidar).slice(0, 15),
       };
     }
   } catch {
     // cae al fallback
   }
-  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [], ajustes: [], experiencias: [] };
+  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [], ajustes: [], experiencias: [], olvidar: [] };
+}
+
+/** Números válidos (enteros >0) de un valor desconocido; para la lista "olvidar". */
+function numberArray(x: unknown): number[] {
+  if (!Array.isArray(x)) return [];
+  return x
+    .map((v) => (typeof v === 'number' ? v : Number(v)))
+    .filter((n) => Number.isInteger(n) && n > 0);
 }
 
 /**

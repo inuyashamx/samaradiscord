@@ -85,6 +85,9 @@ en qué canal) y decide qué hacer. Por eso el mismo núcleo servirá para el ju
   (`olvidar`), vivencias (`soltar_experiencia`), opiniones suyas (`soltar_opinion`)
   y hasta líneas del registro crudo (`limpiar_historial`)— además de sus metas,
   deseos y ajustes. Se cura y evoluciona sola, no la parcheamos desde fuera.
+- **Olvida al reflexionar**: en cada reflexión repasa lo vivido y decide qué
+  SOLTAR (ruido, trivialidades, recuerdos que solo le pesan), como quien pasa
+  página al final del día. Conserva lo que importa; deja ir lo que no.
 
 ### 💬 Participación orgánica
 

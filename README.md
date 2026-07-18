@@ -79,6 +79,9 @@ en qué canal) y decide qué hacer. Por eso el mismo núcleo servirá para el ju
 - **Abre enlaces** (`abrir_enlace`): si le pasan un link, lee la página y la comenta.
 - **Reacciona con emojis** (`reaccionar`): en vez de escribir, a veces solo deja
   su reacción al mensaje — y puede reaccionar y además responder, o solo reaccionar.
+- **Hace acciones de rol** (`hacer_accion`): emotes tipo *samara le lanza una
+  mirada amenazadora a michi* / *hace pucheros* / *rueda los ojos*. Los inventa
+  ella; puede actuar y además hablar, o solo actuar.
 - **Se pone recordatorios** (`recordarme`): se apunta cosas para sacarlas ELLA
   sola más tarde ("luego le pregunto a X"); persisten y los retoma a su hora.
 - **Se edita a sí misma**: puede soltar lo que ya no le sirve —recuerdos

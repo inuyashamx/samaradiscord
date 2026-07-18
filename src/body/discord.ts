@@ -243,6 +243,11 @@ export class DiscordBody {
           msg.react(emoji).catch(() => {}); // emoji inválido o sin permiso: lo ignoramos
           debugLog('reaccion', { a: authorName, emoji });
         },
+        // Mente -> cuerpo: si hace una acción de rol, la mandamos como emote.
+        onAction: (accion) => {
+          void this.sendAction(msg, accion);
+          debugLog('accion', { de: authorName, accion });
+        },
       });
       if (reply) {
         await this.typeLikeAHuman(msg, reply, explicitlyDirect);
@@ -324,6 +329,23 @@ export class DiscordBody {
       await msg.channel.send(clean); // mensaje normal
     } else {
       await msg.reply(clean);
+    }
+  }
+
+  /**
+   * Envía una ACCIÓN de rol como emote en cursiva: "_samara golpea a michi_".
+   * Actúa en vez de (o además de) hablar. Se agrega su nombre al frente.
+   */
+  private async sendAction(msg: Message, accion: string): Promise<void> {
+    const nombre = this.client.user?.username ?? 'samara';
+    const emote = `_${styleOutput(`${nombre} ${accion}`)}_`;
+    try {
+      if ('send' in msg.channel) {
+        await msg.channel.send(emote);
+        this.logSamara(msg.channelId, emote);
+      }
+    } catch (err) {
+      console.error('Error enviando acción:', err);
     }
   }
 

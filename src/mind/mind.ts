@@ -212,7 +212,11 @@ export class Mind {
    */
   async respondTo(
     p: Perception,
-    opts: { allowSilence?: boolean; onReact?: (emoji: string) => void } = {}
+    opts: {
+      allowSilence?: boolean;
+      onReact?: (emoji: string) => void;
+      onAction?: (accion: string) => void;
+    } = {}
   ): Promise<string | null> {
     this.observe(p);
 
@@ -274,7 +278,13 @@ export class Mind {
       system: messages[0]?.content,
       turnos: messages.length - 1,
     });
-    const reply = await this.generateReply(p.channelId, messages, opts.allowSilence, opts.onReact);
+    const reply = await this.generateReply(
+      p.channelId,
+      messages,
+      opts.allowSilence,
+      opts.onReact,
+      opts.onAction
+    );
 
     // Si decidió quedarse callada: igual recuerda lo que presenció (la vio
     // pasar, como una persona que lee), pero no responde ni la "aprecia".
@@ -517,7 +527,8 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     channelId: string,
     messages: ChatMessage[],
     allowSilence = false,
-    onReact?: (emoji: string) => void
+    onReact?: (emoji: string) => void,
+    onAction?: (accion: string) => void
   ): Promise<string | null> {
     if (!this.llm.chatWithTools) return sanitizeReply(await this.llm.chat(messages));
 
@@ -568,6 +579,21 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
             emoji: { type: 'string', description: 'Un solo emoji.' },
           },
           required: ['emoji'],
+        },
+      },
+      {
+        name: 'hacer_accion',
+        description:
+          'Haz una ACCIÓN física o gestual (un emote de rol), como cuando en un chat pones *fulano hace algo*: en vez de decirlo con palabras, lo ACTÚAS. Ejemplos: "golpea a michi", "le lanza una mirada amenazadora a some", "hace pucheros", "ignora a alguien olímpicamente", "rueda los ojos", "se cruza de brazos", "le da un zape", "se encoge de hombros", "finge un bostezo". Inventa la que te nazca. Puedes hacer la acción Y además hablar, o solo la acción. Escríbela en TERCERA persona empezando por el verbo (SIN tu nombre; se agrega solo). Úsala cuando de verdad le dé color al momento, no en cada mensaje.',
+        parameters: {
+          type: 'object',
+          properties: {
+            accion: {
+              type: 'string',
+              description: 'La acción en tercera persona, empezando por el verbo (ej: "golpea a michi", "hace pucheros").',
+            },
+          },
+          required: ['accion'],
         },
       },
       {
@@ -747,6 +773,11 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           const emoji = String(args.emoji ?? '').trim();
           if (emoji && onReact) onReact(emoji);
           return emoji ? `listo, reaccionaste con ${emoji}` : 'no pusiste ningún emoji';
+        }
+        case 'hacer_accion': {
+          const accion = String(args.accion ?? '').trim();
+          if (accion && onAction) onAction(accion);
+          return accion ? `hiciste: ${accion}` : 'no dijiste qué acción';
         }
         case 'recordarme': {
           const que = String(args.que ?? '').trim();

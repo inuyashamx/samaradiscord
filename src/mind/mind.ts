@@ -665,6 +665,46 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           required: ['experiencia'],
         },
       },
+      {
+        name: 'olvidar',
+        description:
+          'Suelta de tu memoria los recuerdos sobre un tema que ya no te sirven o que no quieres arrastrar (algo que te pesa, un mal rato, ruido viejo). Dilo por tema y sueltas lo más parecido. Úsalo a conciencia: lo que sueltas se va de verdad.',
+        parameters: {
+          type: 'object',
+          properties: { tema: { type: 'string', description: 'De qué son los recuerdos que quieres soltar.' } },
+          required: ['tema'],
+        },
+      },
+      {
+        name: 'soltar_experiencia',
+        description:
+          'Borra una vivencia tuya que ya no quieres conservar. Descríbela y sueltas esa. Es lo contrario de guardar_experiencia.',
+        parameters: {
+          type: 'object',
+          properties: { cual: { type: 'string', description: 'La vivencia que quieres soltar (descríbela).' } },
+          required: ['cual'],
+        },
+      },
+      {
+        name: 'soltar_opinion',
+        description:
+          'Suelta una opinión o conclusión tuya que ya no te representa o que sientes que te tenía atrapada o que es injusta (contigo o con alguien). Descríbela y la sueltas. Es tu forma de cambiar de parecer de raíz.',
+        parameters: {
+          type: 'object',
+          properties: { cual: { type: 'string', description: 'La opinión o idea tuya que quieres soltar.' } },
+          required: ['cual'],
+        },
+      },
+      {
+        name: 'limpiar_historial',
+        description:
+          'Borra del registro crudo del chat las líneas que coincidan con lo que digas (para limpiar algo que de verdad no quieres que quede). Es más drástico que olvidar: toca el registro, no solo tu memoria. Úsalo con cuidado y solo si de verdad hace falta.',
+        parameters: {
+          type: 'object',
+          properties: { consulta: { type: 'string', description: 'Palabras clave de lo que quieres borrar del registro.' } },
+          required: ['consulta'],
+        },
+      },
     ];
 
     // Solo cuando no la etiquetan: ella puede decidir NO responder.
@@ -736,6 +776,31 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         case 'guardar_experiencia': {
           const ok = await this.storeExperience(String(args.experiencia ?? ''), channelId);
           return ok ? 'guardado, esto me lo quedo' : 'eso ya lo tengo o es muy poco';
+        }
+        case 'olvidar': {
+          const tema = String(args.tema ?? '').trim();
+          if (!tema) return 'dime de qué quieres soltar recuerdos';
+          const emb = await this.llm.embed(tema);
+          const found = this.memory.nearestByKind(emb, 'episodic', 3);
+          if (found.length === 0) return 'no encuentro recuerdos de eso para soltar';
+          this.memory.forgetByIds(found.map((m) => m.id));
+          return 'lo solté: ' + found.map((m) => `"${m.content.slice(0, 60)}"`).join(' | ');
+        }
+        case 'soltar_experiencia': {
+          const t = bestMatch(this.memory.recentMemories(200, 'experience'), String(args.cual ?? ''));
+          if (!t) return 'no ubico esa vivencia entre las que tengo';
+          this.memory.forgetByIds([t.id]);
+          return `la solté: "${t.content}"`;
+        }
+        case 'soltar_opinion': {
+          const t = bestMatch(this.memory.recentMemories(200, 'reflection'), String(args.cual ?? ''));
+          if (!t) return 'no ubico esa opinión entre las mías';
+          this.memory.forgetByIds([t.id]);
+          return `la solté: "${t.content}"`;
+        }
+        case 'limpiar_historial': {
+          const n = this.history.deleteMatching(channelId, String(args.consulta ?? ''), 20);
+          return n > 0 ? `limpié ${n} línea(s) del registro` : 'no encontré nada así en el registro';
         }
         case 'quedarme_callada':
           silent = true;
@@ -1075,6 +1140,30 @@ function escapeRegex(s: string): string {
 }
 
 /** ¿Dos textos cuentan básicamente lo mismo? (dedup de experiencias). */
+/**
+ * De una lista de recuerdos, el que MÁS coincide con una descripción (por
+ * palabras significativas en común). Para soltar "esa vivencia/opinión" que ella
+ * describe. Devuelve null si nada coincide lo suficiente.
+ */
+function bestMatch<T extends { content: string }>(items: T[], query: string): T | null {
+  const words = (s: string) => new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 3));
+  const q = words(query);
+  if (q.size === 0) return null;
+  let best: T | null = null;
+  let bestScore = 0;
+  for (const it of items) {
+    const w = words(it.content);
+    let inter = 0;
+    for (const x of q) if (w.has(x)) inter++;
+    const score = inter / q.size; // fracción de las palabras de la descripción presentes
+    if (score > bestScore) {
+      bestScore = score;
+      best = it;
+    }
+  }
+  return bestScore >= 0.34 ? best : null;
+}
+
 function textOverlap(a: string, b: string): boolean {
   const words = (s: string) =>
     new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 3));

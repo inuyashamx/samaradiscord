@@ -212,6 +212,42 @@ export class MemoryStore {
     return ids.length;
   }
 
+  /**
+   * Los recuerdos más PARECIDOS a un embedding dentro de un tipo (episodic /
+   * experience / reflection). Sirve para que Samara olvide algo dirigido: busca
+   * lo que quiere soltar y borra justo eso. Pura similitud, sin sesgos de contexto.
+   */
+  nearestByKind(embedding: number[], kind: MemoryKind, k = 3): RetrievedMemory[] {
+    return this.db
+      .prepare(
+        `SELECT m.id AS id, m.channel_id AS channelId, m.author_id AS authorId,
+                m.author_name AS authorName, m.content AS content, m.kind AS kind,
+                m.importance AS importance, m.created_at AS createdAt, v.distance AS distance
+         FROM (
+           SELECT rowid AS id, distance FROM vec_memories WHERE embedding MATCH ? ORDER BY distance LIMIT ?
+         ) v
+         JOIN memories m ON m.id = v.id
+         WHERE m.kind = ?
+         ORDER BY v.distance LIMIT ?`
+      )
+      .all(JSON.stringify(embedding), k * 12, kind, k) as RetrievedMemory[];
+  }
+
+  /** Olvida recuerdos concretos por id (con su vector). Devuelve cuántos borró. */
+  forgetByIds(ids: number[]): number {
+    if (ids.length === 0) return 0;
+    const delVec = this.db.prepare('DELETE FROM vec_memories WHERE rowid = ?');
+    const delMem = this.db.prepare('DELETE FROM memories WHERE id = ?');
+    const tx = this.db.transaction((rows: number[]) => {
+      for (const id of rows) {
+        delVec.run(BigInt(id));
+        delMem.run(id);
+      }
+    });
+    tx(ids);
+    return ids.length;
+  }
+
   /** Borra todas las reflexiones (para reemplazarlas por una versión revisada). */
   deleteReflections(): void {
     const ids = this.db

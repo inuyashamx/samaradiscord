@@ -83,6 +83,32 @@ export class ChatHistory {
     return rows.reverse().map((r) => ({ ...r, isSamara: Boolean(r.isSamara) }));
   }
 
+  /**
+   * Borra del historial del canal las líneas que coincidan con la búsqueda (por
+   * palabras clave). Para que Samara limpie del registro crudo lo que no quiere
+   * arrastrar. Devuelve cuántas borró.
+   */
+  deleteMatching(channelId: string, query: string, limit = 20): number {
+    const terms = query
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.replace(/[%_]/g, ''))
+      .filter((t) => t.length > 2)
+      .slice(0, 6);
+    if (terms.length === 0) return 0;
+
+    const where = terms.map(() => 'content LIKE ?').join(' OR ');
+    const args = terms.map((t) => `%${t}%`);
+    const info = this.db
+      .prepare(
+        `DELETE FROM messages WHERE id IN (
+           SELECT id FROM messages WHERE channel_id = ? AND (${where}) ORDER BY id DESC LIMIT ?
+         )`
+      )
+      .run(channelId, ...args, limit);
+    return info.changes;
+  }
+
   /** Marcas de tiempo de los últimos mensajes de un canal (más nuevo primero). */
   lastMessageTimes(channelId: string, limit = 2): number[] {
     const rows = this.db

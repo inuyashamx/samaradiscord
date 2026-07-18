@@ -81,6 +81,10 @@ en qué canal) y decide qué hacer. Por eso el mismo núcleo servirá para el ju
   su reacción al mensaje — y puede reaccionar y además responder, o solo reaccionar.
 - **Se pone recordatorios** (`recordarme`): se apunta cosas para sacarlas ELLA
   sola más tarde ("luego le pregunto a X"); persisten y los retoma a su hora.
+- **Se edita a sí misma**: puede soltar lo que ya no le sirve —recuerdos
+  (`olvidar`), vivencias (`soltar_experiencia`), opiniones suyas (`soltar_opinion`)
+  y hasta líneas del registro crudo (`limpiar_historial`)— además de sus metas,
+  deseos y ajustes. Se cura y evoluciona sola, no la parcheamos desde fuera.
 
 ### 💬 Participación orgánica
 

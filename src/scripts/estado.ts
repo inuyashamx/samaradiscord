@@ -1,6 +1,6 @@
 import { openDb } from '../mind/db.js';
 import { MemoryStore } from '../mind/memory.js';
-import { Relationships, affinityBand } from '../mind/relationships.js';
+import { Relationships, affinityBand, toleranceBand } from '../mind/relationships.js';
 import { EmotionState } from '../mind/emotion.js';
 import { ChatHistory } from '../mind/history.js';
 import { Goals } from '../mind/goals.js';
@@ -76,8 +76,9 @@ function main(): void {
   } else {
     for (const p of people) {
       const fam = `${p.familiarity} interacc.`.padEnd(14);
-      const af = `afinidad ${p.affinity.toFixed(2)} (${affinityLabel(p.affinity)})`.padEnd(28);
-      console.log(`   ${p.authorName.padEnd(16)} ${fam} ${af} visto ${ago(p.updatedAt)}`);
+      const af = `afecto ${p.affinity.toFixed(2)} (${affinityLabel(p.affinity)})`.padEnd(26);
+      const tol = `tolerancia ${p.tolerance.toFixed(2)} (${toleranceBand(p.tolerance)})`.padEnd(28);
+      console.log(`   ${p.authorName.padEnd(16)} ${fam} ${af} ${tol} visto ${ago(p.updatedAt)}`);
     }
     console.log('');
   }

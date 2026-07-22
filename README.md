@@ -119,9 +119,14 @@ si fue ella la última en hablar. Viene apagada para que no hable "a la nada".
 - **Ánimo** (`emotion.ts`): valencia (bien/mal) y energía, que **decaen hacia
   neutral** con el tiempo. Tiñe su tono. Persistente: al reiniciar retoma el
   ánimo que tenía (con el decaimiento del tiempo que estuvo apagada).
-- **Relaciones** (`relationships.ts`): por cada persona guarda **afinidad** y
-  **familiaridad**. Trata distinto a un desconocido que a un amigo → de ahí salen
-  sus amistades. Es persistente entre sesiones.
+- **Relaciones** (`relationships.ts`): por cada persona guarda **afecto**,
+  **tolerancia** y **familiaridad**. Trata distinto a un desconocido que a un
+  amigo → de ahí salen sus amistades. Es persistente entre sesiones.
+  - **Afecto** (−1..1): cuánto la quiere cerca. Se mueve solo con lo que vive.
+  - **Tolerancia** (−1..1): cuánto le aguanta bromas, tanteos o insistencia. Es
+    **independiente** del afecto (puede querer mucho a alguien y aguantarle poco)
+    y la fija **ELLA** con `ajustar_relacion`. Tolerancia baja = sus "no" con esa
+    persona son firmes y sin culpa; alta = se lo toma con calma y se presta al juego.
 - **Apreciación**: tras cada interacción evalúa (en segundo plano) cómo la hizo
   sentir el mensaje y ajusta ánimo y afinidad.
 

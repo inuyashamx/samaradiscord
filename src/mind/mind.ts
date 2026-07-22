@@ -2,7 +2,7 @@ import { persona, type PresenceContext } from './persona.js';
 import { config } from '../config.js';
 import { ShortTermMemory, type Turn } from './short-term-memory.js';
 import { MemoryStore, type RetrievedMemory, type RecallContext } from './memory.js';
-import { Relationships, affinityBand } from './relationships.js';
+import { Relationships, affinityBand, toleranceBand } from './relationships.js';
 import { webSearchText, readUrlText } from './web-search.js';
 import { Reminders, type Reminder } from './reminders.js';
 import { EmotionState } from './emotion.js';
@@ -582,6 +582,20 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
         },
       },
       {
+        name: 'ajustar_relacion',
+        description:
+          'Fija tú misma tus dos medidores con una persona: AFECTO (cuánto la quieres cerca) y TOLERANCIA (cuánto le aguantas bromas, tanteos o insistencia). Son INDEPENDIENTES: puedes querer mucho a alguien y aguantarle poco, o aguantarle mucho a alguien que apenas te agrada. Ambos van de -1 a 1 (0 = normal). Súbelos con quien quieras soltarte y bajarlos con quien quieras marcar raya: la tolerancia baja hace que tus "no" con esa persona sean firmes y sin culpa. Úsalo cuando de verdad decidas cómo quieres estar con alguien, no a cada rato.',
+        parameters: {
+          type: 'object',
+          properties: {
+            persona: { type: 'string', description: 'Nombre de la persona.' },
+            afecto: { type: 'number', description: 'De -1 a 1. Opcional: solo si quieres cambiarlo.' },
+            tolerancia: { type: 'number', description: 'De -1 a 1. Opcional: solo si quieres cambiarla.' },
+          },
+          required: ['persona'],
+        },
+      },
+      {
         name: 'hacer_accion',
         description:
           'Haz una ACCIÓN física o gestual (un emote de rol), como cuando en un chat pones *fulano hace algo*: en vez de decirlo con palabras, lo ACTÚAS. Ejemplos: "golpea a michi", "le lanza una mirada amenazadora a some", "hace pucheros", "ignora a alguien olímpicamente", "rueda los ojos", "se cruza de brazos", "le da un zape", "se encoge de hombros", "finge un bostezo". Inventa la que te nazca. Puedes hacer la acción Y además hablar, o solo la acción. Escríbela en TERCERA persona empezando por el verbo (SIN tu nombre; se agrega solo). Úsala cuando de verdad le dé color al momento, no en cada mensaje.',
@@ -774,6 +788,16 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
           if (emoji && onReact) onReact(emoji);
           return emoji ? `listo, reaccionaste con ${emoji}` : 'no pusiste ningún emoji';
         }
+        case 'ajustar_relacion': {
+          const quien = this.relationships.findByName(String(args.persona ?? ''));
+          if (!quien) return 'no ubico a esa persona entre las que conozco';
+          const afecto = typeof args.afecto === 'number' ? args.afecto : undefined;
+          const tolerancia = typeof args.tolerancia === 'number' ? args.tolerancia : undefined;
+          if (afecto === undefined && tolerancia === undefined) return 'dime qué medidor quieres mover';
+          const r = this.relationships.setMeters(quien.authorId, { afecto, tolerancia });
+          if (!r) return 'no pude ajustarlo';
+          return `listo con ${r.authorName}: afecto ${r.affinity.toFixed(2)}, tolerancia ${r.tolerance.toFixed(2)}`;
+        }
         case 'hacer_accion': {
           const accion = String(args.accion ?? '').trim();
           if (accion && onAction) onAction(accion);
@@ -876,10 +900,10 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     const rels = this.relationships
       .all()
       .slice(0, 8)
-      .map((r) => {
-        const lbl = r.affinity > 0.3 ? 'bien' : r.affinity < -0.3 ? 'mal' : 'normal';
-        return `${r.authorName} (${lbl}, ${r.familiarity} interacc)`;
-      });
+      .map(
+        (r) =>
+          `${r.authorName} (afecto ${affinityBand(r.affinity)}, tolerancia ${toleranceBand(r.tolerance)}, ${r.familiarity} interacc)`
+      );
     if (rels.length) lines.push(`relaciones: ${rels.join(', ')}`);
     return lines.join('\n');
   }
@@ -940,10 +964,31 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
       }
     }
 
+    // TOLERANCIA: cuánto le aguantas a ESTA persona. Es TUYA (tú la fijas) y es
+    // independiente del afecto: puedes querer a alguien y aguantarle poco.
+    let aguante: string;
+    switch (toleranceBand(rel?.tolerance ?? 0)) {
+      case 'mucha':
+        aguante = `Con ${name} tienes MUCHA tolerancia: sus bromas, tanteos o insistencias no te encienden; te los tomas con calma y hasta te prestas al juego. No lo leas como examen.`;
+        break;
+      case 'algo':
+        aguante = `Con ${name} tienes algo de tolerancia: le aguantas bromas y tanteos sin saltar, aunque tampoco todo.`;
+        break;
+      case 'poca':
+        aguante = `Con ${name} tienes POCA tolerancia: si te tantea o insiste, cortas rápido y sin culpa. Tu "no" con él es válido, no tienes que justificarlo.`;
+        break;
+      case 'ninguna':
+        aguante = `Con ${name} NO tienes tolerancia: al primer empujón cortas en seco. No le debes explicaciones ni paciencia.`;
+        break;
+      default:
+        aguante = `Con ${name} tienes una tolerancia normal: ni te encienden fácil ni te aguantas todo.`;
+    }
+
     const lines = [
       `Tu humor general ahora: ${this.emotion.describe()}. Es REAL, no lo finjas: puede teñir tu TONO (más seca, más callada, o hasta mencionarlo), pero NO decide si tratas bien o mal a alguien — eso lo decide tu relación con cada quien.`,
       `Tu relación con ${name}: ${this.relationships.describe(rel)}`,
       `Cómo tratar a ${name}: ${trato}`,
+      `Cuánto le aguantas: ${aguante}`,
     ];
     if (personFacts.length > 0) {
       lines.push(`Cosas que ${name} te ha contado o dicho antes:`);

@@ -124,9 +124,12 @@ si fue ella la última en hablar. Viene apagada para que no hable "a la nada".
   amigo → de ahí salen sus amistades. Es persistente entre sesiones.
   - **Afecto** (−1..1): cuánto la quiere cerca. Se mueve solo con lo que vive.
   - **Tolerancia** (−1..1): cuánto le aguanta bromas, tanteos o insistencia. Es
-    **independiente** del afecto (puede querer mucho a alguien y aguantarle poco)
-    y la fija **ELLA** con `ajustar_relacion`. Tolerancia baja = sus "no" con esa
-    persona son firmes y sin culpa; alta = se lo toma con calma y se presta al juego.
+    **independiente** del afecto (puede querer mucho a alguien y aguantarle poco).
+    Tolerancia baja = sus "no" con esa persona son firmes y sin culpa; alta = se
+    lo toma con calma y se presta al juego.
+  - Los ajusta **ELLA**, por dos vías: en el momento (`ajustar_relacion`) y en
+    cada **reflexión**, cuando repasa a su gente y decide con quién soltarse y
+    con quién marcar raya.
 - **Apreciación**: tras cada interacción evalúa (en segundo plano) cómo la hizo
   sentir el mensaje y ajusta ánimo y afinidad.
 

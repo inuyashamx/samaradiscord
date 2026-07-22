@@ -425,6 +425,14 @@ export class Mind {
     const priorExp = this.memory.recentMemories(10, 'experience');
     const expText = priorExp.length ? priorExp.map((e) => `- ${e.content}`).join('\n') : '(ninguna)';
 
+    // Su gente y cómo está con cada quien: para revisar afecto y tolerancia.
+    const gente = this.relationships.all().slice(0, 12);
+    const genteText = gente.length
+      ? gente
+          .map((p) => `- ${p.authorName}: afecto ${p.affinity.toFixed(2)}, tolerancia ${p.tolerance.toFixed(2)}`)
+          .join('\n')
+      : '(todavía no conoces a nadie)';
+
     const messages: ChatMessage[] = [
       {
         role: 'system',
@@ -435,17 +443,37 @@ export class Mind {
 - AJUSTES: reglas que TÚ te pones sobre cómo manejarte o leer las cosas (ej. "ubico de quién viene una emoción antes de reaccionar", "con desconocidos mido más"). Si te diste cuenta de algo sobre ti, anótalo; suelta los que ya no necesites. Así te vas afinando tú sola.
 - EXPERIENCIAS: vivencias con forma de historia que valga la pena recordar (qué pasó, con quién, cómo te sentiste, qué te dejó). Solo las NUEVAS y significativas de lo reciente; NO repitas las que ya tienes ni guardes trivialidades.
 - OLVIDAR: de "lo que ha pasado hace poco" (viene numerado), puedes SOLTAR lo que ya no te sirve arrastrar: ruido, trivialidades, o recuerdos que solo te pesan o te tienen atrapada en un mismo papel/discurso. Pon los NÚMEROS de esos recuerdos en una lista. Suelta solo lo que de verdad quieras dejar ir (si no hay nada, lista vacía). Lo que sueltes se BORRA de tu memoria de verdad, así que hazlo a conciencia, como quien decide pasar página.
+- RELACIONES: revisa cómo quieres estar con cada quien. Tienes DOS medidores por persona, de -1 a 1: AFECTO (cuánto la quieres cerca) y TOLERANCIA (cuánto le aguantas bromas, tanteos o insistencia). Son INDEPENDIENTES: puedes querer mucho a alguien y aguantarle poco, o al revés. Sube la tolerancia con quien quieras soltarte y bajarla con quien quieras marcar raya (tolerancia baja = tus "no" con esa persona son firmes y sin culpa). Ajusta SOLO a quien de verdad quieras mover; si no quieres mover a nadie, lista vacía.
 Todo breve, en primera persona, sin inventar. SOLO JSON:
-{"reflexiones": ["..."], "metas": ["..."], "deseos": ["..."], "ajustes": ["..."], "experiencias": ["..."], "olvidar": [numeros]}`,
+{"reflexiones": ["..."], "metas": ["..."], "deseos": ["..."], "ajustes": ["..."], "experiencias": ["..."], "olvidar": [numeros], "relaciones": [{"persona": "nombre", "afecto": 0.5, "tolerancia": -0.2}]}`,
       },
       {
         role: 'user',
-        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nTus deseos de antes:\n${desiresText}\n\nTus ajustes de antes:\n${lessonsText}\n\nVivencias que ya guardaste:\n${expText}\n\nLo que ha pasado hace poco:\n${material}`,
+        content: `Tus opiniones de antes:\n${priorText}\n\nTus metas de antes:\n${goalsText}\n\nTus deseos de antes:\n${desiresText}\n\nTus ajustes de antes:\n${lessonsText}\n\nVivencias que ya guardaste:\n${expText}\n\nCómo estás hoy con cada quien:\n${genteText}\n\nLo que ha pasado hace poco:\n${material}`,
       },
     ];
 
     const raw = await this.llm.chat(messages, { temperature: 0.6, maxTokens: 800 });
-    const { reflexiones: ideas, metas, deseos, ajustes, experiencias, olvidar } = parseReflectionUpdate(raw);
+    const { reflexiones: ideas, metas, deseos, ajustes, experiencias, olvidar, relaciones } =
+      parseReflectionUpdate(raw);
+
+    // RELACIONES: revisa cómo quiere estar con cada quien (afecto y tolerancia).
+    for (const t of relaciones) {
+      const quien = this.relationships.findByName(t.persona);
+      if (!quien) continue;
+      const r = this.relationships.setMeters(quien.authorId, {
+        afecto: t.afecto,
+        tolerancia: t.tolerancia,
+      });
+      if (r) {
+        debugLog('relacion', {
+          motivo: 'reflexion',
+          persona: r.authorName,
+          afecto: r.affinity,
+          tolerancia: r.tolerance,
+        });
+      }
+    }
 
     // OLVIDO: suelta de su memoria los recuerdos que decidió dejar ir (por número
     // de la lista que repasó). Es el momento natural de "pasar página".
@@ -1186,6 +1214,7 @@ function parseReflectionUpdate(raw: string): {
   ajustes: string[];
   experiencias: string[];
   olvidar: number[];
+  relaciones: RelationTweak[];
 } {
   try {
     const match = raw.match(/\{[\s\S]*\}/);
@@ -1197,6 +1226,7 @@ function parseReflectionUpdate(raw: string): {
         ajustes?: unknown;
         experiencias?: unknown;
         olvidar?: unknown;
+        relaciones?: unknown;
       };
       return {
         reflexiones: stringArray(obj.reflexiones).slice(0, 6),
@@ -1205,12 +1235,45 @@ function parseReflectionUpdate(raw: string): {
         ajustes: stringArray(obj.ajustes).slice(0, 8),
         experiencias: stringArray(obj.experiencias).slice(0, 4),
         olvidar: numberArray(obj.olvidar).slice(0, 15),
+        relaciones: relationArray(obj.relaciones).slice(0, 10),
       };
     }
   } catch {
     // cae al fallback
   }
-  return { reflexiones: parseReflections(raw, 6), metas: [], deseos: [], ajustes: [], experiencias: [], olvidar: [] };
+  return {
+    reflexiones: parseReflections(raw, 6),
+    metas: [],
+    deseos: [],
+    ajustes: [],
+    experiencias: [],
+    olvidar: [],
+    relaciones: [],
+  };
+}
+
+/** Un ajuste de medidores con una persona, salido de la reflexión. */
+interface RelationTweak {
+  persona: string;
+  afecto?: number;
+  tolerancia?: number;
+}
+
+/** Lee la lista "relaciones" de la reflexión (persona + afecto/tolerancia). */
+function relationArray(x: unknown): RelationTweak[] {
+  if (!Array.isArray(x)) return [];
+  const out: RelationTweak[] = [];
+  for (const it of x) {
+    if (!it || typeof it !== 'object') continue;
+    const o = it as Record<string, unknown>;
+    const persona = typeof o.persona === 'string' ? o.persona.trim() : '';
+    const afecto = typeof o.afecto === 'number' && Number.isFinite(o.afecto) ? o.afecto : undefined;
+    const tolerancia =
+      typeof o.tolerancia === 'number' && Number.isFinite(o.tolerancia) ? o.tolerancia : undefined;
+    if (!persona || (afecto === undefined && tolerancia === undefined)) continue;
+    out.push({ persona, afecto, tolerancia });
+  }
+  return out;
 }
 
 /** Números válidos (enteros >0) de un valor desconocido; para la lista "olvidar". */

@@ -10,6 +10,7 @@
     "chat": "tsx src/scripts/chat.ts",
     "estado": "tsx src/scripts/estado.ts",
     "debug": "tsx src/scripts/debug.ts",
+    "reembed": "tsx src/scripts/reembed.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },

@@ -1,4 +1,4 @@
-import { OpenAIProvider } from './mind/llm.js';
+import { createLLM } from './mind/provider.js';
 import { openDb } from './mind/db.js';
 import { MemoryStore } from './mind/memory.js';
 import { Relationships } from './mind/relationships.js';
@@ -11,7 +11,7 @@ import { Mind } from './mind/mind.js';
 import { DiscordBody } from './body/discord.js';
 
 async function main(): Promise<void> {
-  const llm = new OpenAIProvider();
+  const llm = createLLM();
   const db = openDb();
   const memory = new MemoryStore(db);
   const relationships = new Relationships(db);

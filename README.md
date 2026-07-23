@@ -202,8 +202,10 @@ npm start
 | `DISCORD_TOKEN` | Token del bot |
 | `DISCORD_APP_ID` | Application ID |
 | `DISCORD_GUILD_ID` | (Opcional) limita a un servidor |
+| `LLM_PROVIDER` | Cerebro: `openai` (def.) o `gemini` (mucho más barato) |
 | `OPENAI_API_KEY` | Tu clave de OpenAI |
 | `OPENAI_MODEL` | Modelo del "cerebro" (def. `gpt-4o`) |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | Clave y modelo si usas Gemini (def. `gemini-flash-latest`) |
 | `OPENAI_DECISION_MODEL` | Modelo barato para decisiones (def. `gpt-4o-mini`) |
 | `OPENAI_EMBEDDING_MODEL` | Embeddings de memoria (def. `text-embedding-3-small`) |
 | `TAVILY_API_KEY` / `BRAVE_API_KEY` | (Opcional) búsqueda web fiable; sin key usa DuckDuckGo |

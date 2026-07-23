@@ -30,6 +30,11 @@ export const config = {
     devUserId: process.env.DEV_USER_ID || undefined,
     devUserName: process.env.DEV_USER_NAME || undefined,
   },
+  // Proveedor del "cerebro": 'openai' (default) o 'gemini' (mucho más barato).
+  // Cambia con LLM_PROVIDER=gemini en el .env.
+  get llmProvider(): 'openai' | 'gemini' {
+    return (process.env.LLM_PROVIDER || 'openai').toLowerCase() === 'gemini' ? 'gemini' : 'openai';
+  },
   openai: {
     get apiKey() {
       return required('OPENAI_API_KEY');
@@ -38,6 +43,24 @@ export const config = {
     // Modelo barato para la decisión de "¿me meto en esta conversación?".
     decisionModel: process.env.OPENAI_DECISION_MODEL || 'gpt-4o-mini',
     embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
+  },
+  gemini: {
+    get apiKey() {
+      return required('GEMINI_API_KEY');
+    },
+    // Cerebro (barato y con buen function calling). Los alias "-latest" enrutan a
+    // capacidad disponible (los nombres 2.0/2.5 fijos pueden estar sin cuota).
+    model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+    // Aún más barato para decisiones.
+    decisionModel: process.env.GEMINI_DECISION_MODEL || 'gemini-flash-lite-latest',
+    // Embeddings a 1536 dims (para que casen con la memoria existente).
+    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
+  },
+  // Modelo de decisión (barato) según el proveedor activo.
+  get decisionModel(): string {
+    return (process.env.LLM_PROVIDER || 'openai').toLowerCase() === 'gemini'
+      ? process.env.GEMINI_DECISION_MODEL || 'gemini-2.0-flash-lite'
+      : process.env.OPENAI_DECISION_MODEL || 'gpt-4o-mini';
   },
   // Búsqueda en internet (herramienta buscar_en_internet). Sin keys usa
   // DuckDuckGo (gratis pero se bloquea si se usa mucho); con una key es fiable.

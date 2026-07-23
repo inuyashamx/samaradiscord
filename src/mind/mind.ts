@@ -172,7 +172,7 @@ export class Mind {
     ];
 
     const ans = await this.llm.chat(messages, {
-      model: config.openai.decisionModel,
+      model: config.decisionModel,
       temperature: 0.4,
       maxTokens: 3,
     });
@@ -1044,7 +1044,7 @@ Todo breve, en primera persona, sin inventar. SOLO JSON:
     ];
 
     const raw = await this.llm.chat(messages, {
-      model: config.openai.decisionModel,
+      model: config.decisionModel,
       temperature: 0.3,
       maxTokens: 40,
     });
